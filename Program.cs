@@ -1,116 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Enums;
+using Exeptions;
+using Models;
+
+
 
 namespace AutoPartsBot
 {
-	// Собственные типы исключений
-	public class TaskCountLimitException : Exception
-	{
-		public TaskCountLimitException(int taskCountLimit)
-			: base($"Превышено максимальное количество задач равное {taskCountLimit}")
-		{
-		}
-	}
-
-	public class TaskLengthLimitException : Exception
-	{
-		public TaskLengthLimitException(int taskLength, int taskLengthLimit)
-			: base($"Длина задачи '{taskLength}' превышает максимально допустимое значение {taskLengthLimit}")
-		{
-		}
-	}
-
-	public class DuplicateTaskException : Exception
-	{
-		public DuplicateTaskException(string task)
-			: base($"Задача '{task}' уже существует")
-		{
-		}
-	}
-
-	public class TaskNotFoundException : Exception
-	{
-		public TaskNotFoundException(Guid taskId)
-			: base($"Задача с ID '{taskId}' не найдена")
-		{
-		}
-	}
-
-	// Enum для состояния задачи
-	public enum ToDoItemState
-	{
-		Active,
-		Completed
-	}
-
-	// Класс пользователя
-	public class ToDoUser
-	{
-		public Guid UserId { get; }
-		public string TelegramUserName { get; }
-		public DateTime RegisteredAt { get; }
-
-		public ToDoUser(string telegramUserName)
-		{
-			UserId = Guid.NewGuid();
-			TelegramUserName = telegramUserName;
-			RegisteredAt = DateTime.UtcNow;
-		}
-
-		public override string ToString()
-		{
-			return $"{TelegramUserName} (зарегистрирован: {RegisteredAt:dd.MM.yyyy HH:mm})";
-		}
-	}
-
-	// Класс задачи
-	public class ToDoItem
-	{
-		public Guid Id { get; }
-		public ToDoUser User { get; }
-		public string Name { get; }
-		public DateTime CreatedAt { get; }
-		public ToDoItemState State { get; private set; }
-		public DateTime? StateChangedAt { get; private set; }
-
-		public ToDoItem(ToDoUser user, string name)
-		{
-			Id = Guid.NewGuid();
-			User = user;
-			Name = name;
-			CreatedAt = DateTime.UtcNow;
-			State = ToDoItemState.Active;
-			StateChangedAt = null;
-		}
-
-		public void MarkAsCompleted()
-		{
-			State = ToDoItemState.Completed;
-			StateChangedAt = DateTime.UtcNow;
-		}
-
-		public override string ToString()
-		{
-			var stateText = State == ToDoItemState.Active ? "Active" : "Completed";
-			var stateChangedText = StateChangedAt.HasValue
-				? $" | Изменено: {StateChangedAt.Value:dd.MM.yyyy HH:mm:ss}"
-				: "";
-
-			return $"{Name} - {CreatedAt:dd.MM.yyyy HH:mm:ss} - {Id}";
-		}
-
-		public string ToStringWithState()
-		{
-			var stateText = State == ToDoItemState.Active ? "(Active)" : "(Completed)";
-			var stateChangedText = StateChangedAt.HasValue
-				? $" | Изменено: {StateChangedAt.Value:dd.MM.yyyy HH:mm:ss}"
-				: "";
-
-			return $"{stateText} {Name} - {CreatedAt:dd.MM.yyyy HH:mm:ss} - {Id}{stateChangedText}";
-		}
-	}
-
 	class Program
 	{
 		// Глобальные переменные для ограничений
