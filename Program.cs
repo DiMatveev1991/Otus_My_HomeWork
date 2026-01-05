@@ -29,15 +29,97 @@ namespace AutoPartsBot
 		}
 	}
 
+	public class TaskNotFoundException : Exception
+	{
+		public TaskNotFoundException(Guid taskId)
+			: base($"Задача с ID '{taskId}' не найдена")
+		{
+		}
+	}
+
+	// Enum для состояния задачи
+	public enum ToDoItemState
+	{
+		Active,
+		Completed
+	}
+
+	// Класс пользователя
+	public class ToDoUser
+	{
+		public Guid UserId { get; }
+		public string TelegramUserName { get; }
+		public DateTime RegisteredAt { get; }
+
+		public ToDoUser(string telegramUserName)
+		{
+			UserId = Guid.NewGuid();
+			TelegramUserName = telegramUserName;
+			RegisteredAt = DateTime.UtcNow;
+		}
+
+		public override string ToString()
+		{
+			return $"{TelegramUserName} (зарегистрирован: {RegisteredAt:dd.MM.yyyy HH:mm})";
+		}
+	}
+
+	// Класс задачи
+	public class ToDoItem
+	{
+		public Guid Id { get; }
+		public ToDoUser User { get; }
+		public string Name { get; }
+		public DateTime CreatedAt { get; }
+		public ToDoItemState State { get; private set; }
+		public DateTime? StateChangedAt { get; private set; }
+
+		public ToDoItem(ToDoUser user, string name)
+		{
+			Id = Guid.NewGuid();
+			User = user;
+			Name = name;
+			CreatedAt = DateTime.UtcNow;
+			State = ToDoItemState.Active;
+			StateChangedAt = null;
+		}
+
+		public void MarkAsCompleted()
+		{
+			State = ToDoItemState.Completed;
+			StateChangedAt = DateTime.UtcNow;
+		}
+
+		public override string ToString()
+		{
+			var stateText = State == ToDoItemState.Active ? "Active" : "Completed";
+			var stateChangedText = StateChangedAt.HasValue
+				? $" | Изменено: {StateChangedAt.Value:dd.MM.yyyy HH:mm:ss}"
+				: "";
+
+			return $"{Name} - {CreatedAt:dd.MM.yyyy HH:mm:ss} - {Id}";
+		}
+
+		public string ToStringWithState()
+		{
+			var stateText = State == ToDoItemState.Active ? "(Active)" : "(Completed)";
+			var stateChangedText = StateChangedAt.HasValue
+				? $" | Изменено: {StateChangedAt.Value:dd.MM.yyyy HH:mm:ss}"
+				: "";
+
+			return $"{stateText} {Name} - {CreatedAt:dd.MM.yyyy HH:mm:ss} - {Id}{stateChangedText}";
+		}
+	}
+
 	class Program
 	{
 		// Глобальные переменные для ограничений
 		private static int maxTaskCount = 10;
 		private static int maxTaskLength = 50;
 
-		// Список задач
-		private static List<string> tasks = new List<string>();
-		private static string userName = null;
+		// Список задач и пользователь
+		private static List<ToDoItem> tasks = new List<ToDoItem>();
+		private static ToDoUser currentUser = null;
 		private static bool isStarted = false;
 
 		static void Main(string[] args)
@@ -57,6 +139,11 @@ namespace AutoPartsBot
 				ContinueApplication();
 			}
 			catch (DuplicateTaskException ex)
+			{
+				Console.WriteLine(ex.Message);
+				ContinueApplication();
+			}
+			catch (TaskNotFoundException ex)
 			{
 				Console.WriteLine(ex.Message);
 				ContinueApplication();
@@ -96,7 +183,7 @@ namespace AutoPartsBot
 
 			// Приветственное сообщение
 			Console.WriteLine("==================================================================");
-			Console.WriteLine($"  AutoParts Bot v3.0 | Лимит задач: {maxTaskCount} | Лим.длина: {maxTaskLength}");
+			Console.WriteLine($"  AutoParts Bot v4.0 (ООП версия) | Лимит задач: {maxTaskCount} | Лим.длина: {maxTaskLength}");
 			Console.WriteLine("==================================================================");
 			Console.WriteLine();
 			Console.WriteLine("Доступные команды:");
@@ -127,6 +214,10 @@ namespace AutoPartsBot
 				{
 					Console.WriteLine(ex.Message);
 				}
+				catch (TaskNotFoundException ex)
+				{
+					Console.WriteLine(ex.Message);
+				}
 				catch (ArgumentException ex)
 				{
 					Console.WriteLine(ex.Message);
@@ -141,13 +232,13 @@ namespace AutoPartsBot
 		static void ProcessUserInput()
 		{
 			// Вывод приглашения для ввода
-			if (string.IsNullOrEmpty(userName))
+			if (currentUser == null)
 			{
 				Console.Write("Введите команду: ");
 			}
 			else
 			{
-				Console.Write($"{userName}, введите команду: ");
+				Console.Write($"{currentUser.TelegramUserName}, введите команду: ");
 			}
 
 			// Получение ввода от пользователя
@@ -183,6 +274,12 @@ namespace AutoPartsBot
 				case "/showtasks":
 					HandleShowTasksCommand();
 					break;
+				case "/showalltasks":
+					HandleShowAllTasksCommand();
+					break;
+				case "/completetask":
+					HandleCompleteTaskCommand();
+					break;
 				case "/removetask":
 					HandleRemoveTaskCommand();
 					break;
@@ -195,13 +292,13 @@ namespace AutoPartsBot
 		// Методы обработки команд
 		static void HandleExitCommand()
 		{
-			if (!string.IsNullOrEmpty(userName))
+			if (currentUser != null)
 			{
-				Console.WriteLine($"До свидания, {userName}! Ваш список задач сохранен.");
-				if (tasks.Count > 0)
-				{
-					Console.WriteLine($"Всего задач: {tasks.Count}");
-				}
+				int activeTasksCount = tasks.Count(t => t.State == ToDoItemState.Active);
+				int completedTasksCount = tasks.Count(t => t.State == ToDoItemState.Completed);
+
+				Console.WriteLine($"До свидания, {currentUser.TelegramUserName}! Ваш список задач сохранен.");
+				Console.WriteLine($"Всего задач: {tasks.Count} (активных: {activeTasksCount}, завершенных: {completedTasksCount})");
 			}
 			else
 			{
@@ -214,31 +311,35 @@ namespace AutoPartsBot
 		{
 			if (isStarted)
 			{
-				Console.WriteLine(string.IsNullOrEmpty(userName)
+				Console.WriteLine(currentUser == null
 					? "Работа уже начата!"
-					: $"{userName}, мы уже начали работу!");
+					: $"{currentUser.TelegramUserName}, мы уже начали работу!");
 				return;
 			}
 
 			Console.WriteLine("Привет! Я бот для поиска и заказа автозапчастей.");
 			Console.WriteLine("Для персонализации сервиса, пожалуйста, введите ваше имя:");
 			Console.Write("Имя: ");
-			userName = Console.ReadLine();
+			string userName = Console.ReadLine();
 
 			ValidateString(userName);
 			userName = userName.Trim();
 
+			// Создаем нового пользователя
+			currentUser = new ToDoUser(userName);
 			isStarted = true;
-			Console.WriteLine($"Отлично, {userName}! Теперь вы можете использовать все функции бота.");
+
+			Console.WriteLine($"Отлично, {currentUser.TelegramUserName}! Теперь вы можете использовать все функции бота.");
 			Console.WriteLine($"Ограничения: макс. задач - {maxTaskCount}, макс. длина - {maxTaskLength}");
+			Console.WriteLine($"Ваш UserId: {currentUser.UserId}");
 			Console.WriteLine();
 		}
 
 		static void HandleHelpCommand()
 		{
-			if (!string.IsNullOrEmpty(userName))
+			if (currentUser != null)
 			{
-				Console.WriteLine($"{userName}, вот список доступных команд:");
+				Console.WriteLine($"{currentUser.TelegramUserName}, вот список доступных команд:");
 			}
 			else
 			{
@@ -251,28 +352,42 @@ namespace AutoPartsBot
 			Console.WriteLine("  /start                   - начать диалог");
 			Console.WriteLine("  /echo тормозные колодки - поиск запчастей");
 			Console.WriteLine("  /addtask                - добавить новый заказ");
-			Console.WriteLine("  /showtasks              - показать все заказы");
+			Console.WriteLine("  /showtasks              - показать активные заказы");
+			Console.WriteLine("  /showalltasks           - показать все заказы (активные и завершенные)");
+			Console.WriteLine("  /completetask <ID>      - завершить задачу по ID (пример: /completetask 73c7940a-ca8c-4327-8a15-9119bffd1d5e)");
 			Console.WriteLine("  /removetask             - удалить заказ по номеру");
 			Console.WriteLine();
 		}
 
 		static void HandleInfoCommand()
 		{
-			if (!string.IsNullOrEmpty(userName))
+			if (currentUser != null)
 			{
-				Console.WriteLine($"{userName}, информация о программе:");
+				Console.WriteLine($"{currentUser.TelegramUserName}, информация о программе:");
 			}
 			else
 			{
 				Console.WriteLine("Информация о программе:");
 			}
 
-			Console.WriteLine($"  Версия: 3.0 (с валидацией)");
+			int activeTasksCount = tasks.Count(t => t.State == ToDoItemState.Active);
+			int completedTasksCount = tasks.Count(t => t.State == ToDoItemState.Completed);
+
+			Console.WriteLine($"  Версия: 4.0 (ООП с классами)");
 			Console.WriteLine($"  Дата создания: 24.10.2023");
 			Console.WriteLine($"  Текущие ограничения:");
 			Console.WriteLine($"    • Максимальное количество задач: {maxTaskCount}");
 			Console.WriteLine($"    • Максимальная длина задачи: {maxTaskLength}");
-			Console.WriteLine($"    • Текущее количество задач: {tasks.Count}");
+			Console.WriteLine($"    • Текущее количество задач: {tasks.Count} (активных: {activeTasksCount}, завершенных: {completedTasksCount})");
+
+			if (currentUser != null)
+			{
+				Console.WriteLine($"  Информация о пользователе:");
+				Console.WriteLine($"    • UserId: {currentUser.UserId}");
+				Console.WriteLine($"    • Имя: {currentUser.TelegramUserName}");
+				Console.WriteLine($"    • Зарегистрирован: {currentUser.RegisteredAt:dd.MM.yyyy HH:mm}");
+			}
+
 			Console.WriteLine("  Разработчик: Команда AutoParts Hub");
 			Console.WriteLine();
 		}
@@ -288,7 +403,7 @@ namespace AutoPartsBot
 			string echoText = input.Substring(5).Trim();
 			ValidateString(echoText);
 
-			Console.WriteLine($"{userName}, ищу запчасти по запросу: \"{echoText}\"");
+			Console.WriteLine($"{currentUser.TelegramUserName}, ищу запчасти по запросу: \"{echoText}\"");
 			Console.WriteLine("...");
 			System.Threading.Thread.Sleep(800);
 
@@ -311,7 +426,7 @@ namespace AutoPartsBot
 				throw new TaskCountLimitException(maxTaskCount);
 			}
 
-			Console.WriteLine($"{userName}, введите описание задачи (например, 'заказать масляный фильтр'):");
+			Console.WriteLine($"{currentUser.TelegramUserName}, введите описание задачи (например, 'заказать масляный фильтр'):");
 			Console.Write("Описание: ");
 			string taskDescription = Console.ReadLine();
 
@@ -324,16 +439,19 @@ namespace AutoPartsBot
 				throw new TaskLengthLimitException(taskDescription.Length, maxTaskLength);
 			}
 
-			// Проверка на дубликаты
-			if (tasks.Any(t => t.Equals(taskDescription, StringComparison.OrdinalIgnoreCase)))
+			// Проверка на дубликаты (только среди активных задач)
+			if (tasks.Any(t => t.Name.Equals(taskDescription, StringComparison.OrdinalIgnoreCase)
+							&& t.State == ToDoItemState.Active))
 			{
 				throw new DuplicateTaskException(taskDescription);
 			}
 
-			// Добавляем задачу
-			string taskWithDate = $"{DateTime.Now:dd.MM.yyyy HH:mm} - {taskDescription}";
-			tasks.Add(taskWithDate);
-			Console.WriteLine($"Задача добавлена! Всего задач в списке: {tasks.Count}");
+			// Создаем новую задачу
+			ToDoItem newTask = new ToDoItem(currentUser, taskDescription);
+			tasks.Add(newTask);
+
+			Console.WriteLine($"Задача добавлена! ID задачи: {newTask.Id}");
+			Console.WriteLine($"Всего задач в списке: {tasks.Count}");
 		}
 
 		static void HandleShowTasksCommand()
@@ -344,22 +462,96 @@ namespace AutoPartsBot
 				return;
 			}
 
-			if (tasks.Count == 0)
+			var activeTasks = tasks.Where(t => t.State == ToDoItemState.Active).ToList();
+
+			if (activeTasks.Count == 0)
 			{
-				Console.WriteLine($"{userName}, список ваших задач/заказов пуст.");
+				Console.WriteLine($"{currentUser.TelegramUserName}, список ваших активных задач/заказов пуст.");
 				Console.WriteLine($"Можно добавить до {maxTaskCount} задач.");
 			}
 			else
 			{
-				Console.WriteLine($"{userName}, вот ваш список задач/заказов:");
-				Console.WriteLine("=========================================");
+				Console.WriteLine($"{currentUser.TelegramUserName}, вот ваш список активных задач/заказов:");
+				Console.WriteLine("======================================================================");
+				for (int i = 0; i < activeTasks.Count; i++)
+				{
+					Console.WriteLine($"{i + 1}. {activeTasks[i]}");
+				}
+				Console.WriteLine("======================================================================");
+				Console.WriteLine($"Активных задач: {activeTasks.Count} из {maxTaskCount}");
+			}
+			Console.WriteLine();
+		}
+
+		static void HandleShowAllTasksCommand()
+		{
+			if (!isStarted)
+			{
+				Console.WriteLine("Пожалуйста, сначала выполните команду /start для начала работы.");
+				return;
+			}
+
+			if (tasks.Count == 0)
+			{
+				Console.WriteLine($"{currentUser.TelegramUserName}, список ваших задач/заказов пуст.");
+				Console.WriteLine($"Можно добавить до {maxTaskCount} задач.");
+			}
+			else
+			{
+				int activeTasksCount = tasks.Count(t => t.State == ToDoItemState.Active);
+				int completedTasksCount = tasks.Count(t => t.State == ToDoItemState.Completed);
+
+				Console.WriteLine($"{currentUser.TelegramUserName}, вот ваш список всех задач/заказов:");
+				Console.WriteLine("======================================================================");
 				for (int i = 0; i < tasks.Count; i++)
 				{
-					Console.WriteLine($"{i + 1}. {tasks[i]}");
+					Console.WriteLine($"{i + 1}. {tasks[i].ToStringWithState()}");
 				}
-				Console.WriteLine("=========================================");
-				Console.WriteLine($"Всего задач: {tasks.Count} из {maxTaskCount}");
+				Console.WriteLine("======================================================================");
+				Console.WriteLine($"Всего задач: {tasks.Count} (активных: {activeTasksCount}, завершенных: {completedTasksCount}) из {maxTaskCount}");
 			}
+			Console.WriteLine();
+		}
+
+		static void HandleCompleteTaskCommand()
+		{
+			if (!isStarted)
+			{
+				Console.WriteLine("Пожалуйста, сначала выполните команду /start для начала работы.");
+				return;
+			}
+
+			Console.WriteLine($"{currentUser.TelegramUserName}, введите ID задачи для завершения:");
+			Console.Write("ID задачи: ");
+			string taskIdInput = Console.ReadLine();
+
+			ValidateString(taskIdInput);
+
+			if (!Guid.TryParse(taskIdInput.Trim(), out Guid taskId))
+			{
+				Console.WriteLine("Ошибка: неверный формат ID. ID должен быть в формате GUID.");
+				return;
+			}
+
+			// Ищем задачу по ID
+			ToDoItem taskToComplete = tasks.FirstOrDefault(t => t.Id == taskId);
+
+			if (taskToComplete == null)
+			{
+				throw new TaskNotFoundException(taskId);
+			}
+
+			if (taskToComplete.State == ToDoItemState.Completed)
+			{
+				Console.WriteLine($"Задача '{taskToComplete.Name}' уже завершена.");
+				return;
+			}
+
+			// Помечаем задачу как завершенную
+			taskToComplete.MarkAsCompleted();
+
+			Console.WriteLine($"Задача '{taskToComplete.Name}' успешно завершена!");
+			Console.WriteLine($"Время завершения: {taskToComplete.StateChangedAt:dd.MM.yyyy HH:mm:ss}");
 			Console.WriteLine();
 		}
 
@@ -373,17 +565,17 @@ namespace AutoPartsBot
 
 			if (tasks.Count == 0)
 			{
-				Console.WriteLine($"{userName}, список задач пуст. Нечего удалять.");
+				Console.WriteLine($"{currentUser.TelegramUserName}, список задач пуст. Нечего удалять.");
 				return;
 			}
 
-			Console.WriteLine($"{userName}, вот ваш текущий список задач:");
-			Console.WriteLine("=========================================");
+			Console.WriteLine($"{currentUser.TelegramUserName}, вот ваш текущий список всех задач:");
+			Console.WriteLine("======================================================================");
 			for (int i = 0; i < tasks.Count; i++)
 			{
-				Console.WriteLine($"{i + 1}. {tasks[i]}");
+				Console.WriteLine($"{i + 1}. {tasks[i].ToStringWithState()}");
 			}
-			Console.WriteLine("=========================================");
+			Console.WriteLine("======================================================================");
 
 			Console.WriteLine("Введите номер задачи для удаления (или 'отмена' для отмены):");
 			Console.Write("Номер: ");
@@ -396,18 +588,18 @@ namespace AutoPartsBot
 			}
 
 			int taskNumber = ParseAndValidateInt(removeInput, 1, tasks.Count);
-			string removedTask = tasks[taskNumber - 1];
+			ToDoItem removedTask = tasks[taskNumber - 1];
 			tasks.RemoveAt(taskNumber - 1);
-			Console.WriteLine($"Задача удалена: \"{removedTask}\"");
+			Console.WriteLine($"Задача удалена: \"{removedTask.Name}\"");
 			Console.WriteLine($"Осталось задач: {tasks.Count} из {maxTaskCount}");
 			Console.WriteLine();
 		}
 
 		static void HandleUnknownCommand(string input)
 		{
-			if (!string.IsNullOrEmpty(userName))
+			if (currentUser != null)
 			{
-				Console.WriteLine($"{userName}, извините, я не понимаю команду \"{input}\".");
+				Console.WriteLine($"{currentUser.TelegramUserName}, извините, я не понимаю команду \"{input}\".");
 			}
 			else
 			{
@@ -420,14 +612,16 @@ namespace AutoPartsBot
 		// Вспомогательные методы
 		static void ShowAvailableCommands()
 		{
-			Console.WriteLine("  /start      - Начать работу с ботом");
-			Console.WriteLine("  /help       - Получить справку по командам");
-			Console.WriteLine("  /info       - Информация о программе");
-			Console.WriteLine("  /echo       - Поиск запчастей (после /start)");
-			Console.WriteLine("  /addtask    - Добавить задачу/заказ");
-			Console.WriteLine("  /showtasks  - Показать список задач/заказов");
-			Console.WriteLine("  /removetask - Удалить задачу/заказ");
-			Console.WriteLine("  /exit       - Выйти из программы");
+			Console.WriteLine("  /start        - Начать работу с ботом");
+			Console.WriteLine("  /help         - Получить справку по командам");
+			Console.WriteLine("  /info         - Информация о программе");
+			Console.WriteLine("  /echo         - Поиск запчастей (после /start)");
+			Console.WriteLine("  /addtask      - Добавить задачу/заказ");
+			Console.WriteLine("  /showtasks    - Показать список активных задач/заказов");
+			Console.WriteLine("  /showalltasks - Показать все задачи/заказы (включая завершенные)");
+			Console.WriteLine("  /completetask - Завершить задачу по ID");
+			Console.WriteLine("  /removetask   - Удалить задачу/заказ по номеру");
+			Console.WriteLine("  /exit         - Выйти из программы");
 		}
 
 		static void ContinueApplication()
