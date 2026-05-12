@@ -1,6 +1,7 @@
 ﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Core.DataAccess;
-using Core.Enums;
 
 namespace Core.Services
 {
@@ -14,10 +15,11 @@ namespace Core.Services
 		}
 
 		// Возвращает кортеж со статистикой пользователя
-		public (int total, int completed, int active, DateTime generatedAt) GetUserStats(Guid userId)
+		public async Task<(int total, int completed, int active, DateTime generatedAt)> GetUserStatsAsync(
+			Guid userId, CancellationToken ct)
 		{
-			var all = _toDoRepository.GetAllByUserId(userId);
-			var active = _toDoRepository.CountActive(userId);
+			var all = await _toDoRepository.GetAllByUserIdAsync(userId, ct);
+			var active = await _toDoRepository.CountActiveAsync(userId, ct);
 			var total = all.Count;
 			var completed = total - active;
 

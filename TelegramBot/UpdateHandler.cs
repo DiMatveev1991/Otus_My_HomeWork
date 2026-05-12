@@ -12,8 +12,7 @@ namespace TelegramBot
 {
 	/// <summary>
 	/// Обработчик команд бота AutoParts Hub.
-	/// Адаптирован под асинхронный IUpdateHandler с CancellationToken
-	/// и обязательной реализацией HandleErrorAsync.
+	/// Полностью асинхронный — все сервисы и репозитории работают через Task + CancellationToken.
 	/// </summary>
 	public class UpdateHandler : IUpdateHandler
 	{
@@ -51,7 +50,7 @@ namespace TelegramBot
 			var command = parts[0].ToLower();
 			var argument = parts.Length > 1 ? parts[1].Trim() : string.Empty;
 
-			var currentUser = _userService.GetUser(from.Id);
+			var currentUser = await _userService.GetUserAsync(from.Id, ct);
 
 			// Команды доступные без регистрации
 			switch (command)
@@ -111,7 +110,7 @@ namespace TelegramBot
 			}
 		}
 
-		// Метод обязательный по новому контракту IUpdateHandler.
+		// Метод обязательный по контракту IUpdateHandler.
 		// Сюда библиотека ConsoleBotClient прокидывает все исключения
 		// из HandleUpdateAsync — единая точка обработки ошибок.
 		public Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken ct)
@@ -137,7 +136,7 @@ namespace TelegramBot
 			}
 
 			var userName = from.Username ?? $"Client_{from.Id}";
-			var newUser = _userService.RegisterUser(from.Id, userName);
+			var newUser = await _userService.RegisterUserAsync(from.Id, userName, ct);
 
 			await botClient.SendMessage(chat,
 				$"Добро пожаловать в AutoParts Hub, {newUser.TelegramUserName}!\n" +
@@ -188,8 +187,8 @@ namespace TelegramBot
 
 			if (currentUser != null)
 			{
-				var all = _toDoService.GetAllByUserId(currentUser.UserId);
-				var active = _toDoService.GetActiveByUserId(currentUser.UserId);
+				var all = await _toDoService.GetAllByUserIdAsync(currentUser.UserId, ct);
+				var active = await _toDoService.GetActiveByUserIdAsync(currentUser.UserId, ct);
 				sb.AppendLine($"  Клиент:          {currentUser.TelegramUserName}");
 				sb.AppendLine($"  UserId:          {currentUser.UserId}");
 				sb.AppendLine($"  Зарегистрирован: {currentUser.RegisteredAt:dd.MM.yyyy HH:mm}");
@@ -209,7 +208,7 @@ namespace TelegramBot
 		private async Task HandleShowOrders(ITelegramBotClient botClient, Chat chat,
 			ToDoUser user, CancellationToken ct)
 		{
-			var orders = _toDoService.GetActiveByUserId(user.UserId);
+			var orders = await _toDoService.GetActiveByUserIdAsync(user.UserId, ct);
 
 			if (orders.Count == 0)
 			{
@@ -233,7 +232,7 @@ namespace TelegramBot
 		private async Task HandleShowAllOrders(ITelegramBotClient botClient, Chat chat,
 			ToDoUser user, CancellationToken ct)
 		{
-			var orders = _toDoService.GetAllByUserId(user.UserId);
+			var orders = await _toDoService.GetAllByUserIdAsync(user.UserId, ct);
 
 			if (orders.Count == 0)
 			{
@@ -243,7 +242,7 @@ namespace TelegramBot
 				return;
 			}
 
-			var active = _toDoService.GetActiveByUserId(user.UserId);
+			var active = await _toDoService.GetActiveByUserIdAsync(user.UserId, ct);
 			var sb = new StringBuilder();
 			sb.AppendLine($"{user.TelegramUserName}, все ваши заказы:");
 			sb.AppendLine("======================================================================");
@@ -267,7 +266,7 @@ namespace TelegramBot
 				return;
 			}
 
-			var order = _toDoService.Add(user, argument);
+			var order = await _toDoService.AddAsync(user, argument, ct);
 			await botClient.SendMessage(chat,
 				$"Заказ добавлен!\n" +
 				$"Запчасть: {order.Name}\n" +
@@ -287,7 +286,7 @@ namespace TelegramBot
 				return;
 			}
 
-			var orders = _toDoService.GetAllByUserId(user.UserId);
+			var orders = await _toDoService.GetAllByUserIdAsync(user.UserId, ct);
 			var order = orders.FirstOrDefault(t => t.Id == orderId);
 
 			if (order == null)
@@ -298,7 +297,7 @@ namespace TelegramBot
 				return;
 			}
 
-			_toDoService.MarkCompleted(orderId);
+			await _toDoService.MarkCompletedAsync(orderId, ct);
 			await botClient.SendMessage(chat,
 				$"Заказ выполнен!\n" +
 				$"Запчасть: {order.Name}\n" +
@@ -308,7 +307,7 @@ namespace TelegramBot
 		private async Task HandleRemoveOrder(ITelegramBotClient botClient, Chat chat,
 			ToDoUser user, string argument, CancellationToken ct)
 		{
-			var allOrders = _toDoService.GetAllByUserId(user.UserId).ToList();
+			var allOrders = (await _toDoService.GetAllByUserIdAsync(user.UserId, ct)).ToList();
 
 			if (allOrders.Count == 0)
 			{
@@ -328,7 +327,7 @@ namespace TelegramBot
 			}
 
 			var order = allOrders[number - 1];
-			_toDoService.Delete(order.Id);
+			await _toDoService.DeleteAsync(order.Id, ct);
 			await botClient.SendMessage(chat,
 				$"Заказ удалён!\n" +
 				$"Запчасть: {order.Name}\n" +
@@ -339,7 +338,7 @@ namespace TelegramBot
 		private async Task HandleReport(ITelegramBotClient botClient, Chat chat,
 			ToDoUser user, CancellationToken ct)
 		{
-			var stats = _toDoReportService.GetUserStats(user.UserId);
+			var stats = await _toDoReportService.GetUserStatsAsync(user.UserId, ct);
 			var (total, completed, active, generatedAt) = stats;
 
 			await botClient.SendMessage(chat,
@@ -347,7 +346,7 @@ namespace TelegramBot
 				$"Всего: {total}; Завершенных: {completed}; Активных: {active};", ct);
 		}
 
-		// /find — лямбда через IToDoService.Find
+		// /find — лямбда через IToDoService.FindAsync
 		private async Task HandleFind(ITelegramBotClient botClient, Chat chat,
 			ToDoUser user, string argument, CancellationToken ct)
 		{
@@ -359,7 +358,7 @@ namespace TelegramBot
 				return;
 			}
 
-			var found = _toDoService.Find(user, argument);
+			var found = await _toDoService.FindAsync(user, argument, ct);
 
 			if (found.Count == 0)
 			{
@@ -383,8 +382,8 @@ namespace TelegramBot
 		private async Task HandleExit(ITelegramBotClient botClient, Chat chat,
 			ToDoUser user, CancellationToken ct)
 		{
-			var active = _toDoService.GetActiveByUserId(user.UserId);
-			var all = _toDoService.GetAllByUserId(user.UserId);
+			var active = await _toDoService.GetActiveByUserIdAsync(user.UserId, ct);
+			var all = await _toDoService.GetAllByUserIdAsync(user.UserId, ct);
 			await botClient.SendMessage(chat,
 				$"До свидания, {user.TelegramUserName}!\n" +
 				$"Ваши заказы сохранены. Всего: {all.Count} (активных: {active.Count})\n" +
