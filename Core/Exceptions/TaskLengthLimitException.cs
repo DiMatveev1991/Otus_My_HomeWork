@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Exeptions
+namespace Core.Exceptions
 {
 	public class TaskLengthLimitException : Exception
 	{
@@ -9,5 +9,4 @@ namespace Exeptions
 		{
 		}
 	}
-
 }

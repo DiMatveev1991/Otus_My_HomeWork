@@ -1,10 +1,9 @@
 ﻿using System;
-using Enums;
+using Core.Enums;
 
-
-namespace Models
+namespace Core.Entities
 {
-	// Класс задачи
+	// Класс задачи (заказа на автозапчасть)
 	public class ToDoItem
 	{
 		public Guid Id { get; }
@@ -32,11 +31,6 @@ namespace Models
 
 		public override string ToString()
 		{
-			var stateText = State == ToDoItemState.Active ? "Active" : "Completed";
-			var stateChangedText = StateChangedAt.HasValue
-				? $" | Изменено: {StateChangedAt.Value:dd.MM.yyyy HH:mm:ss}"
-				: "";
-
 			return $"{Name} - {CreatedAt:dd.MM.yyyy HH:mm:ss} - {Id}";
 		}
 

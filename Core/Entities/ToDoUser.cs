@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Models
+namespace Core.Entities
 {
 	// Класс пользователя магазина автозапчастей
 	public class ToDoUser

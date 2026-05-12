@@ -1,25 +1,30 @@
-﻿using Models;
-using Otus.ToDoList.ConsoleBot;
-using Otus.ToDoList.ConsoleBot.Types;
-using Otus_My_HomeWork.Services.Interfaces;
-using System;
+﻿using System;
 using System.Linq;
 using System.Text;
+using Core.Entities;
+using Core.Services;
+using Otus.ToDoList.ConsoleBot;
+using Otus.ToDoList.ConsoleBot.Types;
 
-namespace AutoPartsBot
+namespace TelegramBot
 {
-		/// <summary>
-		/// Обработчик команд бота магазина автозапчастей AutoParts Hub
-		/// </summary>
+	/// <summary>
+	/// Обработчик команд бота магазина автозапчастей AutoParts Hub
+	/// </summary>
 	public class UpdateHandler : IUpdateHandler
 	{
 		private readonly IUserService _userService;
 		private readonly IToDoService _toDoService;
+		private readonly IToDoReportService _toDoReportService;
 
-		public UpdateHandler(IUserService userService, IToDoService toDoService)
+		public UpdateHandler(
+			IUserService userService,
+			IToDoService toDoService,
+			IToDoReportService toDoReportService)
 		{
 			_userService = userService;
 			_toDoService = toDoService;
+			_toDoReportService = toDoReportService;
 		}
 
 		public void HandleUpdateAsync(ITelegramBotClient botClient, Update update)
@@ -84,6 +89,12 @@ namespace AutoPartsBot
 					case "/removetask":
 						HandleRemoveOrder(botClient, chat, currentUser, argument);
 						break;
+					case "/report":
+						HandleReport(botClient, chat, currentUser);
+						break;
+					case "/find":
+						HandleFind(botClient, chat, currentUser, argument);
+						break;
 					case "/exit":
 						HandleExit(botClient, chat, currentUser);
 						break;
@@ -144,6 +155,10 @@ namespace AutoPartsBot
 			sb.AppendLine("                            Пример: /completetask 3fa85f64-5717-...");
 			sb.AppendLine("/removetask <номер>       - Удалить заказ по номеру.");
 			sb.AppendLine("                            Пример: /removetask 2");
+			sb.AppendLine("/report                   - Статистика по вашим заказам");
+			sb.AppendLine("                            (всего / выполненных / активных)");
+			sb.AppendLine("/find <префикс>           - Поиск заказов по началу названия.");
+			sb.AppendLine("                            Пример: /find Масляный");
 			sb.AppendLine("/exit                     - Выйти из программы");
 
 			botClient.SendMessage(chat, sb.ToString());
@@ -153,7 +168,7 @@ namespace AutoPartsBot
 		{
 			var sb = new StringBuilder();
 			sb.AppendLine("==================================================");
-			sb.AppendLine("  AutoParts Hub Bot v5.0 (ООП + интерфейсы)");
+			sb.AppendLine("  AutoParts Hub Bot v6.0 (репозитории + лямбды)");
 			sb.AppendLine("  Система управления заказами автозапчастей");
 			sb.AppendLine("==================================================");
 
@@ -302,6 +317,51 @@ namespace AutoPartsBot
 				$"Заказ удалён!\n" +
 				$"Запчасть: {order.Name}\n" +
 				$"Осталось заказов: {allOrders.Count - 1}");
+		}
+
+		// Команда /report — использует кортеж из IToDoReportService
+		private void HandleReport(ITelegramBotClient botClient, Chat chat, ToDoUser user)
+		{
+			var stats = _toDoReportService.GetUserStats(user.UserId);
+
+			// Деконструкция кортежа
+			var (total, completed, active, generatedAt) = stats;
+
+			botClient.SendMessage(chat,
+				$"Статистика по задачам на {generatedAt:dd.MM.yyyy HH:mm:ss}. " +
+				$"Всего: {total}; Завершенных: {completed}; Активных: {active};");
+		}
+
+		// Команда /find — использует лямбду через IToDoService.Find
+		private void HandleFind(ITelegramBotClient botClient, Chat chat,
+			ToDoUser user, string argument)
+		{
+			if (string.IsNullOrWhiteSpace(argument))
+			{
+				botClient.SendMessage(chat,
+					"Укажите префикс имени для поиска.\n" +
+					"Пример: /find Масляный");
+				return;
+			}
+
+			var found = _toDoService.Find(user, argument);
+
+			if (found.Count == 0)
+			{
+				botClient.SendMessage(chat,
+					$"{user.TelegramUserName}, заказов, начинающихся на \"{argument}\", не найдено.");
+				return;
+			}
+
+			// Вывод как в /showtasks
+			var sb = new StringBuilder();
+			sb.AppendLine($"{user.TelegramUserName}, найдено заказов: {found.Count}");
+			sb.AppendLine("======================================================================");
+			for (int i = 0; i < found.Count; i++)
+				sb.AppendLine($"{i + 1}. {found[i]}");
+			sb.AppendLine("======================================================================");
+
+			botClient.SendMessage(chat, sb.ToString());
 		}
 
 		private void HandleExit(ITelegramBotClient botClient, Chat chat, ToDoUser user)

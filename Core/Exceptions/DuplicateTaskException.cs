@@ -1,6 +1,6 @@
 ﻿using System;
 
- namespace Exeptions
+namespace Core.Exceptions
 {
 	public class DuplicateTaskException : Exception
 	{
