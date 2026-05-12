@@ -1,9 +1,6 @@
 ﻿using Otus.ToDoList.ConsoleBot.Types;
 
 namespace Otus.ToDoList.ConsoleBot;
-/// <summary>
-/// Консольный клиент для бота
-/// </summary>
 public class ConsoleBotClient : ITelegramBotClient
 {
     private readonly Chat _chat;
@@ -15,34 +12,26 @@ public class ConsoleBotClient : ITelegramBotClient
         _user = new User { Id = Random.Shared.Next(), Username = $"ConsoleUser_{Guid.NewGuid()}" };
     }
 
-    public void SendMessage(Chat chat, string text)
+    public async Task SendMessage(Chat chat, string text, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(chat, nameof(chat));
         ArgumentNullException.ThrowIfNull(text, nameof(text));
         if (_chat.Id != chat.Id)
             throw new ArgumentException($"Invalid chat.Id. Support {_chat.Id}, but was {chat.Id}");
 
-        WriteLineColor($"Бот: {text}", ConsoleColor.Blue);
+        await WriteLineColorAsync($"Бот: {text}", ConsoleColor.Blue, ct);
     }
 
-    public void StartReceiving(IUpdateHandler handler)
+    public void StartReceiving(IUpdateHandler handler, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(handler, nameof(handler));
-
-        var cts = new CancellationTokenSource();
-        ConsoleCancelEventHandler cancelHandler = (sender, e) =>
-        {
-            cts.Cancel();
-            e.Cancel = true;
-        };
-        Console.CancelKeyPress += cancelHandler;
 
         try
         {
             WriteLineColor("Бот запущен. Введите сообщение", ConsoleColor.Magenta);
             var counter = 0;
 
-            while (cts.IsCancellationRequested is false)
+            while (ct.IsCancellationRequested is false)
             {
                 var input = Console.ReadLine();
                 if (input is null)
@@ -59,13 +48,26 @@ public class ConsoleBotClient : ITelegramBotClient
                     }
                 };
 
-                handler.HandleUpdateAsync(this, update);
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await handler.HandleUpdateAsync(this, update, ct);
+                    }
+                    catch (OperationCanceledException) { }
+                    catch (Exception ex)
+                    {
+                        try
+                        {
+                            await handler.HandleErrorAsync(this, ex, ct);
+                        }
+                        catch (OperationCanceledException) { }
+                    }
+                }, ct);
             }
         }
         finally
         {
-            Console.CancelKeyPress -= cancelHandler;
-            cts.Dispose();
             WriteLineColor("Бот остановлен", ConsoleColor.Magenta);
         }
     }
@@ -75,6 +77,14 @@ public class ConsoleBotClient : ITelegramBotClient
         var currentColor = Console.ForegroundColor;
         Console.ForegroundColor = color;
         Console.WriteLine(text);
+        Console.ForegroundColor = currentColor;
+    }
+
+    private static async Task WriteLineColorAsync(string text, ConsoleColor color, CancellationToken ct)
+    {
+        var currentColor = Console.ForegroundColor;
+        Console.ForegroundColor = color;
+        await Console.Out.WriteLineAsync(text.AsMemory(), ct);
         Console.ForegroundColor = currentColor;
     }
 }

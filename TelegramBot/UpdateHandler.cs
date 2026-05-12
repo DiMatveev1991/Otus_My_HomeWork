@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Linq;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Core.Entities;
 using Core.Services;
 using Otus.ToDoList.ConsoleBot;
@@ -9,132 +11,142 @@ using Otus.ToDoList.ConsoleBot.Types;
 namespace TelegramBot
 {
 	/// <summary>
-	/// Обработчик команд бота магазина автозапчастей AutoParts Hub
+	/// Обработчик команд бота AutoParts Hub.
+	/// Полностью асинхронный — все сервисы и репозитории работают через Task + CancellationToken.
 	/// </summary>
 	public class UpdateHandler : IUpdateHandler
 	{
 		private readonly IUserService _userService;
 		private readonly IToDoService _toDoService;
 		private readonly IToDoReportService _toDoReportService;
+		private readonly CancellationTokenSource _appCts;
 
 		public UpdateHandler(
 			IUserService userService,
 			IToDoService toDoService,
-			IToDoReportService toDoReportService)
+			IToDoReportService toDoReportService,
+			CancellationTokenSource appCts)
 		{
 			_userService = userService;
 			_toDoService = toDoService;
 			_toDoReportService = toDoReportService;
+			_appCts = appCts;
 		}
 
-		public void HandleUpdateAsync(ITelegramBotClient botClient, Update update)
+		public async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken ct)
 		{
-			try
+			var message = update.Message;
+			var chat = message.Chat;
+			var from = message.From;
+			var text = message.Text?.Trim() ?? string.Empty;
+
+			var parts = text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+			if (parts.Length == 0)
 			{
-				var message = update.Message;
-				var chat = message.Chat;
-				var from = message.From;
-				var text = message.Text?.Trim() ?? string.Empty;
-
-				var parts = text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-				if (parts.Length == 0)
-				{
-					botClient.SendMessage(chat, "Введите команду. Используйте /help для справки.");
-					return;
-				}
-
-				var command = parts[0].ToLower();
-				var argument = parts.Length > 1 ? parts[1].Trim() : string.Empty;
-
-				var currentUser = _userService.GetUser(from.Id);
-
-				// Команды доступные без регистрации
-				switch (command)
-				{
-					case "/help":
-						HandleHelp(botClient, chat, currentUser);
-						return;
-					case "/info":
-						HandleInfo(botClient, chat, currentUser);
-						return;
-					case "/start":
-						HandleStart(botClient, chat, from, currentUser);
-						return;
-				}
-
-				// Остальные команды только для зарегистрированных
-				if (currentUser == null)
-				{
-					botClient.SendMessage(chat,
-						"Добро пожаловать в AutoParts Hub!\n" +
-						"Для начала работы выполните команду /start.\n" +
-						"Доступны команды: /help, /info");
-					return;
-				}
-
-				switch (command)
-				{
-					case "/showtasks":
-						HandleShowOrders(botClient, chat, currentUser);
-						break;
-					case "/showalltasks":
-						HandleShowAllOrders(botClient, chat, currentUser);
-						break;
-					case "/addtask":
-						HandleAddOrder(botClient, chat, currentUser, argument);
-						break;
-					case "/completetask":
-						HandleCompleteOrder(botClient, chat, currentUser, argument);
-						break;
-					case "/removetask":
-						HandleRemoveOrder(botClient, chat, currentUser, argument);
-						break;
-					case "/report":
-						HandleReport(botClient, chat, currentUser);
-						break;
-					case "/find":
-						HandleFind(botClient, chat, currentUser, argument);
-						break;
-					case "/exit":
-						HandleExit(botClient, chat, currentUser);
-						break;
-					default:
-						botClient.SendMessage(chat,
-							$"Неизвестная команда \"{text}\".\n" +
-							"Введите /help для просмотра доступных команд.");
-						break;
-				}
+				await botClient.SendMessage(chat, "Введите команду. Используйте /help для справки.", ct);
+				return;
 			}
-			catch (Exception ex)
+
+			var command = parts[0].ToLower();
+			var argument = parts.Length > 1 ? parts[1].Trim() : string.Empty;
+
+			var currentUser = await _userService.GetUserAsync(from.Id, ct);
+
+			// Команды доступные без регистрации
+			switch (command)
 			{
-				botClient.SendMessage(update.Message.Chat, $"Ошибка: {ex.Message}");
+				case "/help":
+					await HandleHelp(botClient, chat, currentUser, ct);
+					return;
+				case "/info":
+					await HandleInfo(botClient, chat, currentUser, ct);
+					return;
+				case "/start":
+					await HandleStart(botClient, chat, from, currentUser, ct);
+					return;
 			}
+
+			// Остальные команды — только для зарегистрированных
+			if (currentUser == null)
+			{
+				await botClient.SendMessage(chat,
+					"Добро пожаловать в AutoParts Hub!\n" +
+					"Для начала работы выполните команду /start.\n" +
+					"Доступны команды: /help, /info", ct);
+				return;
+			}
+
+			switch (command)
+			{
+				case "/showtasks":
+					await HandleShowOrders(botClient, chat, currentUser, ct);
+					break;
+				case "/showalltasks":
+					await HandleShowAllOrders(botClient, chat, currentUser, ct);
+					break;
+				case "/addtask":
+					await HandleAddOrder(botClient, chat, currentUser, argument, ct);
+					break;
+				case "/completetask":
+					await HandleCompleteOrder(botClient, chat, currentUser, argument, ct);
+					break;
+				case "/removetask":
+					await HandleRemoveOrder(botClient, chat, currentUser, argument, ct);
+					break;
+				case "/report":
+					await HandleReport(botClient, chat, currentUser, ct);
+					break;
+				case "/find":
+					await HandleFind(botClient, chat, currentUser, argument, ct);
+					break;
+				case "/exit":
+					await HandleExit(botClient, chat, currentUser, ct);
+					break;
+				default:
+					await botClient.SendMessage(chat,
+						$"Неизвестная команда \"{text}\".\n" +
+						"Введите /help для просмотра доступных команд.", ct);
+					break;
+			}
+		}
+
+		// Метод обязательный по контракту IUpdateHandler.
+		// Сюда библиотека ConsoleBotClient прокидывает все исключения
+		// из HandleUpdateAsync — единая точка обработки ошибок.
+		public Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken ct)
+		{
+			var prevColor = Console.ForegroundColor;
+			Console.ForegroundColor = ConsoleColor.Red;
+			Console.WriteLine($"HandleError: {exception.GetType().Name}: {exception.Message}");
+			Console.ForegroundColor = prevColor;
+			return Task.CompletedTask;
 		}
 
 		// ── Обработчики команд ───────────────────────────────────────────────
 
-		private void HandleStart(ITelegramBotClient botClient, Chat chat,
-			User from, ToDoUser? currentUser)
+		private async Task HandleStart(ITelegramBotClient botClient, Chat chat,
+			User from, ToDoUser? currentUser, CancellationToken ct)
 		{
 			if (currentUser != null)
 			{
-				botClient.SendMessage(chat,
+				await botClient.SendMessage(chat,
 					$"Вы уже зарегистрированы, {currentUser.TelegramUserName}!\n" +
-					"Введите /help для просмотра доступных команд.");
+					"Введите /help для просмотра доступных команд.", ct);
 				return;
 			}
 
 			var userName = from.Username ?? $"Client_{from.Id}";
-			var newUser = _userService.RegisterUser(from.Id, userName);
+			var newUser = await _userService.RegisterUserAsync(from.Id, userName, ct);
 
-			botClient.SendMessage(chat,
+			await botClient.SendMessage(chat,
 				$"Добро пожаловать в AutoParts Hub, {newUser.TelegramUserName}!\n" +
 				"Вы успешно зарегистрированы. Теперь вы можете создавать заказы на запчасти.\n" +
 				$"UserId: {newUser.UserId}\n" +
-				"Введите /help для просмотра команд.");
+				"Введите /help для просмотра команд.", ct);
 		}
 
-		private void HandleHelp(ITelegramBotClient botClient, Chat chat, ToDoUser? currentUser)
+		private async Task HandleHelp(ITelegramBotClient botClient, Chat chat,
+			ToDoUser? currentUser, CancellationToken ct)
 		{
 			var sb = new StringBuilder();
 
@@ -161,26 +173,27 @@ namespace TelegramBot
 			sb.AppendLine("                            Пример: /find Масляный");
 			sb.AppendLine("/exit                     - Выйти из программы");
 
-			botClient.SendMessage(chat, sb.ToString());
+			await botClient.SendMessage(chat, sb.ToString(), ct);
 		}
 
-		private void HandleInfo(ITelegramBotClient botClient, Chat chat, ToDoUser? currentUser)
+		private async Task HandleInfo(ITelegramBotClient botClient, Chat chat,
+			ToDoUser? currentUser, CancellationToken ct)
 		{
 			var sb = new StringBuilder();
 			sb.AppendLine("==================================================");
-			sb.AppendLine("  AutoParts Hub Bot v6.0 (репозитории + лямбды)");
+			sb.AppendLine("  AutoParts Hub Bot v7.0 (async + CancellationToken)");
 			sb.AppendLine("  Система управления заказами автозапчастей");
 			sb.AppendLine("==================================================");
 
 			if (currentUser != null)
 			{
-				var all = _toDoService.GetAllByUserId(currentUser.UserId);
-				var active = _toDoService.GetActiveByUserId(currentUser.UserId);
-				sb.AppendLine($"  Клиент:        {currentUser.TelegramUserName}");
-				sb.AppendLine($"  UserId:        {currentUser.UserId}");
+				var all = await _toDoService.GetAllByUserIdAsync(currentUser.UserId, ct);
+				var active = await _toDoService.GetActiveByUserIdAsync(currentUser.UserId, ct);
+				sb.AppendLine($"  Клиент:          {currentUser.TelegramUserName}");
+				sb.AppendLine($"  UserId:          {currentUser.UserId}");
 				sb.AppendLine($"  Зарегистрирован: {currentUser.RegisteredAt:dd.MM.yyyy HH:mm}");
-				sb.AppendLine($"  Заказов всего: {all.Count}");
-				sb.AppendLine($"  Активных:      {active.Count}");
+				sb.AppendLine($"  Заказов всего:   {all.Count}");
+				sb.AppendLine($"  Активных:        {active.Count}");
 			}
 			else
 			{
@@ -189,18 +202,19 @@ namespace TelegramBot
 
 			sb.AppendLine("  Разработчик: Команда AutoParts Hub");
 
-			botClient.SendMessage(chat, sb.ToString());
+			await botClient.SendMessage(chat, sb.ToString(), ct);
 		}
 
-		private void HandleShowOrders(ITelegramBotClient botClient, Chat chat, ToDoUser user)
+		private async Task HandleShowOrders(ITelegramBotClient botClient, Chat chat,
+			ToDoUser user, CancellationToken ct)
 		{
-			var orders = _toDoService.GetActiveByUserId(user.UserId);
+			var orders = await _toDoService.GetActiveByUserIdAsync(user.UserId, ct);
 
 			if (orders.Count == 0)
 			{
-				botClient.SendMessage(chat,
+				await botClient.SendMessage(chat,
 					$"{user.TelegramUserName}, у вас нет активных заказов.\n" +
-					"Добавьте заказ командой /addtask <название запчасти>");
+					"Добавьте заказ командой /addtask <название запчасти>", ct);
 				return;
 			}
 
@@ -212,22 +226,23 @@ namespace TelegramBot
 			sb.AppendLine("======================================================================");
 			sb.AppendLine($"Активных заказов: {orders.Count}");
 
-			botClient.SendMessage(chat, sb.ToString());
+			await botClient.SendMessage(chat, sb.ToString(), ct);
 		}
 
-		private void HandleShowAllOrders(ITelegramBotClient botClient, Chat chat, ToDoUser user)
+		private async Task HandleShowAllOrders(ITelegramBotClient botClient, Chat chat,
+			ToDoUser user, CancellationToken ct)
 		{
-			var orders = _toDoService.GetAllByUserId(user.UserId);
+			var orders = await _toDoService.GetAllByUserIdAsync(user.UserId, ct);
 
 			if (orders.Count == 0)
 			{
-				botClient.SendMessage(chat,
+				await botClient.SendMessage(chat,
 					$"{user.TelegramUserName}, список заказов пуст.\n" +
-					"Добавьте заказ командой /addtask <название запчасти>");
+					"Добавьте заказ командой /addtask <название запчасти>", ct);
 				return;
 			}
 
-			var active = _toDoService.GetActiveByUserId(user.UserId);
+			var active = await _toDoService.GetActiveByUserIdAsync(user.UserId, ct);
 			var sb = new StringBuilder();
 			sb.AppendLine($"{user.TelegramUserName}, все ваши заказы:");
 			sb.AppendLine("======================================================================");
@@ -236,124 +251,122 @@ namespace TelegramBot
 			sb.AppendLine("======================================================================");
 			sb.AppendLine($"Всего заказов: {orders.Count} (активных: {active.Count}, выполненных: {orders.Count - active.Count})");
 
-			botClient.SendMessage(chat, sb.ToString());
+			await botClient.SendMessage(chat, sb.ToString(), ct);
 		}
 
-		private void HandleAddOrder(ITelegramBotClient botClient, Chat chat,
-			ToDoUser user, string argument)
+		private async Task HandleAddOrder(ITelegramBotClient botClient, Chat chat,
+			ToDoUser user, string argument, CancellationToken ct)
 		{
 			if (string.IsNullOrWhiteSpace(argument))
 			{
-				botClient.SendMessage(chat,
+				await botClient.SendMessage(chat,
 					"Укажите название запчасти или описание заказа.\n" +
 					"Пример: /addtask Масляный фильтр Toyota Camry 2.5\n" +
-					"Пример: /addtask Тормозные колодки передние Honda Accord");
+					"Пример: /addtask Тормозные колодки передние Honda Accord", ct);
 				return;
 			}
 
-			var order = _toDoService.Add(user, argument);
-			botClient.SendMessage(chat,
+			var order = await _toDoService.AddAsync(user, argument, ct);
+			await botClient.SendMessage(chat,
 				$"Заказ добавлен!\n" +
 				$"Запчасть: {order.Name}\n" +
 				$"ID заказа: {order.Id}\n" +
-				$"Дата создания: {order.CreatedAt:dd.MM.yyyy HH:mm:ss}");
+				$"Дата создания: {order.CreatedAt:dd.MM.yyyy HH:mm:ss}", ct);
 		}
 
-		private void HandleCompleteOrder(ITelegramBotClient botClient, Chat chat,
-			ToDoUser user, string argument)
+		private async Task HandleCompleteOrder(ITelegramBotClient botClient, Chat chat,
+			ToDoUser user, string argument, CancellationToken ct)
 		{
 			if (!Guid.TryParse(argument, out var orderId))
 			{
-				botClient.SendMessage(chat,
+				await botClient.SendMessage(chat,
 					"Укажите корректный ID заказа в формате GUID.\n" +
 					"ID заказа можно найти в списке /showtasks или /showalltasks.\n" +
-					"Пример: /completetask 3fa85f64-5717-4562-b3fc-2c963f66afa6");
+					"Пример: /completetask 3fa85f64-5717-4562-b3fc-2c963f66afa6", ct);
 				return;
 			}
 
-			var orders = _toDoService.GetAllByUserId(user.UserId);
+			var orders = await _toDoService.GetAllByUserIdAsync(user.UserId, ct);
 			var order = orders.FirstOrDefault(t => t.Id == orderId);
 
 			if (order == null)
 			{
-				botClient.SendMessage(chat,
+				await botClient.SendMessage(chat,
 					$"Заказ с ID {orderId} не найден в вашем списке.\n" +
-					"Проверьте ID командой /showalltasks");
+					"Проверьте ID командой /showalltasks", ct);
 				return;
 			}
 
-			_toDoService.MarkCompleted(orderId);
-			botClient.SendMessage(chat,
+			await _toDoService.MarkCompletedAsync(orderId, ct);
+			await botClient.SendMessage(chat,
 				$"Заказ выполнен!\n" +
 				$"Запчасть: {order.Name}\n" +
-				$"Время выполнения: {DateTime.UtcNow:dd.MM.yyyy HH:mm:ss}");
+				$"Время выполнения: {DateTime.UtcNow:dd.MM.yyyy HH:mm:ss}", ct);
 		}
 
-		private void HandleRemoveOrder(ITelegramBotClient botClient, Chat chat,
-			ToDoUser user, string argument)
+		private async Task HandleRemoveOrder(ITelegramBotClient botClient, Chat chat,
+			ToDoUser user, string argument, CancellationToken ct)
 		{
-			var allOrders = _toDoService.GetAllByUserId(user.UserId).ToList();
+			var allOrders = (await _toDoService.GetAllByUserIdAsync(user.UserId, ct)).ToList();
 
 			if (allOrders.Count == 0)
 			{
-				botClient.SendMessage(chat,
-					$"{user.TelegramUserName}, список заказов пуст. Нечего удалять.");
+				await botClient.SendMessage(chat,
+					$"{user.TelegramUserName}, список заказов пуст. Нечего удалять.", ct);
 				return;
 			}
 
 			if (!int.TryParse(argument, out var number) ||
 				number < 1 || number > allOrders.Count)
 			{
-				botClient.SendMessage(chat,
+				await botClient.SendMessage(chat,
 					$"Укажите номер заказа от 1 до {allOrders.Count}.\n" +
 					"Пример: /removetask 2\n" +
-					"Список заказов: /showalltasks");
+					"Список заказов: /showalltasks", ct);
 				return;
 			}
 
 			var order = allOrders[number - 1];
-			_toDoService.Delete(order.Id);
-			botClient.SendMessage(chat,
+			await _toDoService.DeleteAsync(order.Id, ct);
+			await botClient.SendMessage(chat,
 				$"Заказ удалён!\n" +
 				$"Запчасть: {order.Name}\n" +
-				$"Осталось заказов: {allOrders.Count - 1}");
+				$"Осталось заказов: {allOrders.Count - 1}", ct);
 		}
 
-		// Команда /report — использует кортеж из IToDoReportService
-		private void HandleReport(ITelegramBotClient botClient, Chat chat, ToDoUser user)
+		// /report — кортеж из IToDoReportService
+		private async Task HandleReport(ITelegramBotClient botClient, Chat chat,
+			ToDoUser user, CancellationToken ct)
 		{
-			var stats = _toDoReportService.GetUserStats(user.UserId);
-
-			// Деконструкция кортежа
+			var stats = await _toDoReportService.GetUserStatsAsync(user.UserId, ct);
 			var (total, completed, active, generatedAt) = stats;
 
-			botClient.SendMessage(chat,
+			await botClient.SendMessage(chat,
 				$"Статистика по задачам на {generatedAt:dd.MM.yyyy HH:mm:ss}. " +
-				$"Всего: {total}; Завершенных: {completed}; Активных: {active};");
+				$"Всего: {total}; Завершенных: {completed}; Активных: {active};", ct);
 		}
 
-		// Команда /find — использует лямбду через IToDoService.Find
-		private void HandleFind(ITelegramBotClient botClient, Chat chat,
-			ToDoUser user, string argument)
+		// /find — лямбда через IToDoService.FindAsync
+		private async Task HandleFind(ITelegramBotClient botClient, Chat chat,
+			ToDoUser user, string argument, CancellationToken ct)
 		{
 			if (string.IsNullOrWhiteSpace(argument))
 			{
-				botClient.SendMessage(chat,
+				await botClient.SendMessage(chat,
 					"Укажите префикс имени для поиска.\n" +
-					"Пример: /find Масляный");
+					"Пример: /find Масляный", ct);
 				return;
 			}
 
-			var found = _toDoService.Find(user, argument);
+			var found = await _toDoService.FindAsync(user, argument, ct);
 
 			if (found.Count == 0)
 			{
-				botClient.SendMessage(chat,
-					$"{user.TelegramUserName}, заказов, начинающихся на \"{argument}\", не найдено.");
+				await botClient.SendMessage(chat,
+					$"{user.TelegramUserName}, заказов, начинающихся на \"{argument}\", не найдено.", ct);
 				return;
 			}
 
-			// Вывод как в /showtasks
 			var sb = new StringBuilder();
 			sb.AppendLine($"{user.TelegramUserName}, найдено заказов: {found.Count}");
 			sb.AppendLine("======================================================================");
@@ -361,18 +374,22 @@ namespace TelegramBot
 				sb.AppendLine($"{i + 1}. {found[i]}");
 			sb.AppendLine("======================================================================");
 
-			botClient.SendMessage(chat, sb.ToString());
+			await botClient.SendMessage(chat, sb.ToString(), ct);
 		}
 
-		private void HandleExit(ITelegramBotClient botClient, Chat chat, ToDoUser user)
+		// /exit — корректное завершение через CancellationTokenSource
+		// вместо Environment.Exit, которое жёстко рубит процесс.
+		private async Task HandleExit(ITelegramBotClient botClient, Chat chat,
+			ToDoUser user, CancellationToken ct)
 		{
-			var active = _toDoService.GetActiveByUserId(user.UserId);
-			var all = _toDoService.GetAllByUserId(user.UserId);
-			botClient.SendMessage(chat,
+			var active = await _toDoService.GetActiveByUserIdAsync(user.UserId, ct);
+			var all = await _toDoService.GetAllByUserIdAsync(user.UserId, ct);
+			await botClient.SendMessage(chat,
 				$"До свидания, {user.TelegramUserName}!\n" +
 				$"Ваши заказы сохранены. Всего: {all.Count} (активных: {active.Count})\n" +
-				"Ждём вас в AutoParts Hub!");
-			Environment.Exit(0);
+				"Ждём вас в AutoParts Hub! (нажмите Enter для выхода)", ct);
+
+			_appCts.Cancel();
 		}
 	}
 }

@@ -1,28 +1,30 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Core.Entities;
 
 namespace Core.DataAccess
 {
 	public interface IToDoRepository
 	{
-		IReadOnlyList<ToDoItem> GetAllByUserId(Guid userId);
+		Task<IReadOnlyList<ToDoItem>> GetAllByUserIdAsync(Guid userId, CancellationToken ct);
 
 		/// <summary>Возвращает ToDoItem для UserId со статусом Active</summary>
-		IReadOnlyList<ToDoItem> GetActiveByUserId(Guid userId);
+		Task<IReadOnlyList<ToDoItem>> GetActiveByUserIdAsync(Guid userId, CancellationToken ct);
 
-		ToDoItem? Get(Guid id);
-		void Add(ToDoItem item);
-		void Update(ToDoItem item);
-		void Delete(Guid id);
+		Task<ToDoItem?> GetAsync(Guid id, CancellationToken ct);
+		Task AddAsync(ToDoItem item, CancellationToken ct);
+		Task UpdateAsync(ToDoItem item, CancellationToken ct);
+		Task DeleteAsync(Guid id, CancellationToken ct);
 
 		/// <summary>Проверяет, есть ли задача с таким именем у пользователя</summary>
-		bool ExistsByName(Guid userId, string name);
+		Task<bool> ExistsByNameAsync(Guid userId, string name, CancellationToken ct);
 
 		/// <summary>Возвращает количество активных задач у пользователя</summary>
-		int CountActive(Guid userId);
+		Task<int> CountActiveAsync(Guid userId, CancellationToken ct);
 
 		/// <summary>Возвращает все задачи пользователя, удовлетворяющие предикату</summary>
-		IReadOnlyList<ToDoItem> Find(Guid userId, Func<ToDoItem, bool> predicate);
+		Task<IReadOnlyList<ToDoItem>> FindAsync(Guid userId, Func<ToDoItem, bool> predicate, CancellationToken ct);
 	}
 }

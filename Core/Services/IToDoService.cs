@@ -1,24 +1,26 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Core.Entities;
 
 namespace Core.Services
 {
 	public interface IToDoService
 	{
-		IReadOnlyList<ToDoItem> GetAllByUserId(Guid userId);
+		Task<IReadOnlyList<ToDoItem>> GetAllByUserIdAsync(Guid userId, CancellationToken ct);
 
 		/// <summary>Возвращает ToDoItem для UserId со статусом Active</summary>
-		IReadOnlyList<ToDoItem> GetActiveByUserId(Guid userId);
+		Task<IReadOnlyList<ToDoItem>> GetActiveByUserIdAsync(Guid userId, CancellationToken ct);
 
-		ToDoItem Add(ToDoUser user, string name);
-		void MarkCompleted(Guid id);
-		void Delete(Guid id);
+		Task<ToDoItem> AddAsync(ToDoUser user, string name, CancellationToken ct);
+		Task MarkCompletedAsync(Guid id, CancellationToken ct);
+		Task DeleteAsync(Guid id, CancellationToken ct);
 
 		/// <summary>
 		/// Возвращает все задачи пользователя, имя которых начинается на namePrefix.
-		/// Использует IToDoRepository.Find с предикатом-лямбдой.
+		/// Использует IToDoRepository.FindAsync с предикатом-лямбдой.
 		/// </summary>
-		IReadOnlyList<ToDoItem> Find(ToDoUser user, string namePrefix);
+		Task<IReadOnlyList<ToDoItem>> FindAsync(ToDoUser user, string namePrefix, CancellationToken ct);
 	}
 }

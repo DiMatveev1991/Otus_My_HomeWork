@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Core.DataAccess;
 using Core.Entities;
 
@@ -14,16 +16,17 @@ namespace Core.Services
 			_userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
 		}
 
-		public ToDoUser RegisterUser(long telegramUserId, string telegramUserName)
+		public async Task<ToDoUser> RegisterUserAsync(
+			long telegramUserId, string telegramUserName, CancellationToken ct)
 		{
 			var user = new ToDoUser(telegramUserId, telegramUserName);
-			_userRepository.Add(user);
+			await _userRepository.AddAsync(user, ct);
 			return user;
 		}
 
-		public ToDoUser? GetUser(long telegramUserId)
+		public async Task<ToDoUser?> GetUserAsync(long telegramUserId, CancellationToken ct)
 		{
-			return _userRepository.GetUserByTelegramUserId(telegramUserId);
+			return await _userRepository.GetUserByTelegramUserIdAsync(telegramUserId, ct);
 		}
 	}
 }
