@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.DataAccess;
@@ -33,9 +34,20 @@ try
 		e.Cancel = true;
 	};
 
-	// 3. Репозитории (Infrastructure)
-	IUserRepository userRepository = new InMemoryUserRepository();
-	IToDoRepository toDoRepository = new InMemoryToDoRepository();
+	// 3. Репозитории (Infrastructure) — теперь файловые.
+	//    Базовая папка: значение TODO_DATA_PATH или ./data рядом с .exe.
+	var dataRoot = Environment.GetEnvironmentVariable("TODO_DATA_PATH");
+	if (string.IsNullOrWhiteSpace(dataRoot))
+		dataRoot = Path.Combine(AppContext.BaseDirectory, "data");
+
+	var usersPath = Path.Combine(dataRoot, "users");
+	var itemsPath = Path.Combine(dataRoot, "items");
+
+	Console.WriteLine($"Хранилище пользователей: {usersPath}");
+	Console.WriteLine($"Хранилище заказов:       {itemsPath}");
+
+	IUserRepository userRepository = new FileUserRepository(usersPath);
+	IToDoRepository toDoRepository = new FileToDoRepository(itemsPath);
 
 	// 4. Сервисы с DI через конструктор
 	IUserService userService = new UserService(userRepository);
@@ -58,7 +70,6 @@ try
 		: new TelegramBotClient(token, httpClient);
 
 	// 8. Регистрируем команды в нативной кнопке Menu рядом с полем ввода.
-	//    Описания видны пользователю в выпадающем списке Telegram.
 	await botClient.SetMyCommands(new[]
 	{
 		new BotCommand { Command = "start",        Description = "Регистрация в системе" },
@@ -75,7 +86,6 @@ try
 	}, cancellationToken: cts.Token);
 
 	// 9. Запуск приёма обновлений (long polling).
-	//    StartReceiving — fire-and-forget, не блокирует поток.
 	var receiverOptions = new ReceiverOptions
 	{
 		AllowedUpdates = new[] { UpdateType.Message },
@@ -90,12 +100,8 @@ try
 	Console.WriteLine("Нажмите клавишу A для выхода");
 
 	// 10. Цикл ожидания клавиши.
-	//     При нажатии A — отменяем токен и выходим.
-	//     При любой другой клавише — выводим информацию о боте.
 	while (!cts.IsCancellationRequested)
 	{
-		// ReadKey блокирующий, поэтому проверяем доступность ввода,
-		// чтобы корректно реагировать на отмену из /exit или Ctrl+C.
 		if (!Console.KeyAvailable)
 		{
 			try
@@ -124,7 +130,7 @@ try
 		Console.WriteLine("Нажмите клавишу A для выхода");
 	}
 
-	// 11. Даём отмене распространиться, чтобы polling-цикл успел корректно завершиться
+	// 11. Даём отмене распространиться
 	await Task.Delay(200);
 }
 catch (OperationCanceledException)
