@@ -49,8 +49,9 @@ namespace Infrastructure.DataAccess
 			_basePath = basePath;
 			_indexPath = Path.Combine(_basePath, IndexFileName);
 
-			// По заданию: папку нужно создавать, если её нет
-			Directory.CreateDirectory(_basePath);
+			// По заданию: папку создаём только если её ещё нет
+			if (!Directory.Exists(_basePath))
+				Directory.CreateDirectory(_basePath);
 		}
 
 		// === IToDoRepository =================================================
@@ -97,7 +98,8 @@ namespace Infrastructure.DataAccess
 			if (item == null) throw new ArgumentNullException(nameof(item));
 
 			var userDir = GetUserDirectory(item.User.UserId);
-			Directory.CreateDirectory(userDir);
+			if (!Directory.Exists(userDir))
+				Directory.CreateDirectory(userDir);
 
 			var path = GetItemPath(item.User.UserId, item.Id);
 			await WriteItemAsync(path, item, ct);

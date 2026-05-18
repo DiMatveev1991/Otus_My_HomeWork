@@ -30,8 +30,9 @@ namespace Infrastructure.DataAccess
 
 			_basePath = basePath;
 
-			// По заданию: папку нужно создавать, если её нет
-			Directory.CreateDirectory(_basePath);
+			// По заданию: папку создаём только если её ещё нет
+			if (!Directory.Exists(_basePath))
+				Directory.CreateDirectory(_basePath);
 		}
 
 		public async Task<ToDoUser?> GetUserAsync(Guid userId, CancellationToken ct)
