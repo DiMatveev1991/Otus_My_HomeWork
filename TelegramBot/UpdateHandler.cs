@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -10,6 +11,7 @@ using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using TelegramBot.Scenarios;
 
 namespace TelegramBot
 {
@@ -22,17 +24,23 @@ namespace TelegramBot
 		private readonly IUserService _userService;
 		private readonly IToDoService _toDoService;
 		private readonly IToDoReportService _toDoReportService;
+		private readonly IEnumerable<IScenario> _scenarios;
+		private readonly IScenarioContextRepository _contextRepository;
 		private readonly CancellationTokenSource _appCts;
 
 		public UpdateHandler(
 			IUserService userService,
 			IToDoService toDoService,
 			IToDoReportService toDoReportService,
+			IEnumerable<IScenario> scenarios,
+			IScenarioContextRepository contextRepository,
 			CancellationTokenSource appCts)
 		{
 			_userService = userService;
 			_toDoService = toDoService;
 			_toDoReportService = toDoReportService;
+			_scenarios = scenarios;
+			_contextRepository = contextRepository;
 			_appCts = appCts;
 		}
 
@@ -61,6 +69,25 @@ namespace TelegramBot
 			var argument = parts.Length > 1 ? parts[1].Trim() : string.Empty;
 
 			var currentUser = await _userService.GetUserAsync(from.Id, ct);
+
+			// /cancel — прерывает активный сценарий. Обрабатывается ДО запуска ProcessScenario.
+			if (command == "/cancel")
+			{
+				await _contextRepository.ResetContext(from.Id, ct);
+				await SendAsync(botClient, chat.Id,
+					currentUser is null ? KeyboardFactory.PreRegistration : KeyboardFactory.PostRegistration,
+					"Действие отменено. Возвращаю к списку команд.", ct);
+				return;
+			}
+
+			// Получаем ScenarioContext перед обработкой команд.
+			// Если сценарий активен — передаём сообщение ему и завершаем обработку.
+			var activeContext = await _contextRepository.GetContext(from.Id, ct);
+			if (activeContext != null)
+			{
+				await ProcessScenario(botClient, activeContext, message, ct);
+				return;
+			}
 
 			// Команды доступные без регистрации
 			switch (command)
@@ -95,7 +122,9 @@ namespace TelegramBot
 					await HandleShowAllOrders(botClient, chat, currentUser, ct);
 					break;
 				case "/addtask":
-					await HandleAddOrder(botClient, chat, currentUser, argument, ct);
+					// Запуск сценария создания задачи с сохранением состояния
+					var addTaskContext = new ScenarioContext(ScenarioType.AddTask);
+					await ProcessScenario(botClient, addTaskContext, message, ct);
 					break;
 				case "/completetask":
 					await HandleCompleteOrder(botClient, chat, currentUser, argument, ct);
@@ -131,6 +160,29 @@ namespace TelegramBot
 			Console.WriteLine($"HandleError [{source}]: {exception.GetType().Name}: {exception.Message}");
 			Console.ForegroundColor = prevColor;
 			return Task.CompletedTask;
+		}
+
+		// === Сценарии ========================================================
+
+		// Возвращает сценарий, способный обработать указанный тип.
+		// Если сценарий не найден — выбрасывает исключение.
+		private IScenario GetScenario(ScenarioType scenario)
+		{
+			return _scenarios.FirstOrDefault(s => s.CanHandle(scenario))
+				?? throw new InvalidOperationException($"Сценарий {scenario} не найден.");
+		}
+
+		// Обрабатывает один шаг сценария и сохраняет/сбрасывает его состояние.
+		private async Task ProcessScenario(ITelegramBotClient bot, ScenarioContext context,
+			Message msg, CancellationToken ct)
+		{
+			var scenario = GetScenario(context.CurrentScenario);
+			var result = await scenario.HandleMessageAsync(bot, context, msg, ct);
+
+			if (result == ScenarioResult.Completed)
+				await _contextRepository.ResetContext(msg.From!.Id, ct);
+			else
+				await _contextRepository.SetContext(msg.From!.Id, context, ct);
 		}
 
 		// === Вспомогательные методы ==========================================
@@ -202,8 +254,9 @@ namespace TelegramBot
 			sb.AppendLine("/start                    - Регистрация в системе");
 			sb.AppendLine("/help                     - Справка по командам");
 			sb.AppendLine("/info                     - Информация о программе и вашем аккаунте");
-			sb.AppendLine("/addtask <запчасть>       - Добавить заказ. Пример:");
-			sb.AppendLine("                            /addtask Масляный фильтр Toyota Camry 2.5");
+			sb.AppendLine("/addtask                  - Добавить заказ (пошаговый сценарий:");
+			sb.AppendLine("                            название задачи, затем дедлайн dd.MM.yyyy)");
+			sb.AppendLine("/cancel                   - Отменить текущий сценарий");
 			sb.AppendLine("/showtasks                - Показать активные заказы");
 			sb.AppendLine("/showalltasks             - Показать все заказы (включая выполненные)");
 			sb.AppendLine("/completetask <id>        - Отметить заказ выполненным по GUID.");
@@ -318,26 +371,6 @@ namespace TelegramBot
 			sb.AppendLine($"Всего заказов: {orders.Count} (активных: {active.Count}, выполненных: {orders.Count - active.Count})");
 
 			await SendMarkdownAsync(bot, chat.Id, KeyboardFactory.PostRegistration, sb.ToString(), ct);
-		}
-
-		private async Task HandleAddOrder(ITelegramBotClient bot, Chat chat,
-			ToDoUser user, string argument, CancellationToken ct)
-		{
-			if (string.IsNullOrWhiteSpace(argument))
-			{
-				await SendAsync(bot, chat.Id, KeyboardFactory.PostRegistration,
-					"Укажите название запчасти или описание заказа.\n" +
-					"Пример: /addtask Масляный фильтр Toyota Camry 2.5\n" +
-					"Пример: /addtask Тормозные колодки передние Honda Accord", ct);
-				return;
-			}
-
-			var order = await _toDoService.AddAsync(user, argument, ct);
-			await SendAsync(bot, chat.Id, KeyboardFactory.PostRegistration,
-				$"Заказ добавлен!\n" +
-				$"Запчасть: {order.Name}\n" +
-				$"ID заказа: {order.Id}\n" +
-				$"Дата создания: {order.CreatedAt:dd.MM.yyyy HH:mm:ss}", ct);
 		}
 
 		private async Task HandleCompleteOrder(ITelegramBotClient bot, Chat chat,

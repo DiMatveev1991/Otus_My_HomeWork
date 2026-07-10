@@ -13,7 +13,7 @@ namespace Core.Services
 		/// <summary>Возвращает ToDoItem для UserId со статусом Active</summary>
 		Task<IReadOnlyList<ToDoItem>> GetActiveByUserIdAsync(Guid userId, CancellationToken ct);
 
-		Task<ToDoItem> AddAsync(ToDoUser user, string name, CancellationToken ct);
+		Task<ToDoItem> AddAsync(ToDoUser user, string name, DateTime deadline, CancellationToken ct);
 		Task MarkCompletedAsync(Guid id, CancellationToken ct);
 		Task DeleteAsync(Guid id, CancellationToken ct);
 

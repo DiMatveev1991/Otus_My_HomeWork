@@ -10,6 +10,7 @@ using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using TelegramBot;
+using TelegramBot.Scenarios;
 
 try
 {
@@ -55,8 +56,16 @@ try
 		maxTaskCount: 10, maxTaskLength: 100);
 	IToDoReportService toDoReportService = new ToDoReportService(toDoRepository);
 
+	// 4a. Сценарии и хранилище их промежуточного состояния
+	IScenarioContextRepository scenarioContextRepository = new InMemoryScenarioContextRepository();
+	var scenarios = new IScenario[]
+	{
+		new AddTaskScenario(userService, toDoService)
+	};
+
 	// 5. Обработчик с возможностью инициировать отмену из /exit
-	var handler = new UpdateHandler(userService, toDoService, toDoReportService, cts);
+	var handler = new UpdateHandler(userService, toDoService, toDoReportService,
+		scenarios, scenarioContextRepository, cts);
 
 	// 6. HttpClient с прокси (если задан TELEGRAM_BOT_PROXY)
 	using var httpClient = ProxyFactory.CreateHttpClient(out var proxyDescription);
@@ -75,7 +84,8 @@ try
 		new BotCommand { Command = "start",        Description = "Регистрация в системе" },
 		new BotCommand { Command = "help",         Description = "Справка по командам" },
 		new BotCommand { Command = "info",         Description = "Информация о программе и аккаунте" },
-		new BotCommand { Command = "addtask",      Description = "Добавить заказ: /addtask <запчасть>" },
+		new BotCommand { Command = "addtask",      Description = "Добавить заказ (пошаговый сценарий)" },
+		new BotCommand { Command = "cancel",       Description = "Отменить текущий сценарий" },
 		new BotCommand { Command = "showtasks",    Description = "Показать активные заказы" },
 		new BotCommand { Command = "showalltasks", Description = "Показать все заказы" },
 		new BotCommand { Command = "completetask", Description = "Выполнить заказ: /completetask <id>" },

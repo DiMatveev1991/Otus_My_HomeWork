@@ -39,7 +39,7 @@ namespace Core.Services
 			return await _toDoRepository.GetActiveByUserIdAsync(userId, ct);
 		}
 
-		public async Task<ToDoItem> AddAsync(ToDoUser user, string name, CancellationToken ct)
+		public async Task<ToDoItem> AddAsync(ToDoUser user, string name, DateTime deadline, CancellationToken ct)
 		{
 			if (user == null) throw new ArgumentNullException(nameof(user));
 			if (string.IsNullOrWhiteSpace(name))
@@ -59,7 +59,7 @@ namespace Core.Services
 				if (await _toDoRepository.ExistsByNameAsync(user.UserId, name, ct))
 					throw new DuplicateTaskException(name);
 
-				var item = new ToDoItem(user, name);
+				var item = new ToDoItem(user, name, deadline);
 				await _toDoRepository.AddAsync(item, ct);
 				return item;
 			}
