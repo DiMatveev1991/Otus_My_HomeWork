@@ -18,12 +18,12 @@ namespace TelegramBot
 			};
 
 		// Клавиатура для зарегистрированных пользователей
-		// (ровно те три кнопки, что прописаны в задании)
 		public static ReplyKeyboardMarkup PostRegistration { get; } =
 			new(new[]
 			{
 				new[]
 				{
+					new KeyboardButton("/addtask"),
 					new KeyboardButton("/showtasks"),
 					new KeyboardButton("/showalltasks")
 				},
@@ -32,6 +32,14 @@ namespace TelegramBot
 					new KeyboardButton("/report")
 				}
 			})
+			{
+				ResizeKeyboard = true,
+				IsPersistent = true
+			};
+
+		// Клавиатура во время выполнения сценария — доступна только отмена
+		public static ReplyKeyboardMarkup Cancel { get; } =
+			new(new[] { new KeyboardButton("/cancel") })
 			{
 				ResizeKeyboard = true,
 				IsPersistent = true
