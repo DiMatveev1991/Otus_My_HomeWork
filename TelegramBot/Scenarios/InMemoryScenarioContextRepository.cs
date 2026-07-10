@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -6,11 +6,13 @@ namespace TelegramBot.Scenarios
 {
 	/// <summary>
 	/// Реализация <see cref="IScenarioContextRepository"/> в оперативной памяти.
-	/// В качестве хранилища используется Dictionary&lt;long, ScenarioContext&gt;.
+	/// В качестве хранилища используется потокобезопасный
+	/// <see cref="ConcurrentDictionary{TKey,TValue}"/>, поскольку HandleUpdateAsync
+	/// может вызываться параллельно для разных обновлений.
 	/// </summary>
 	public class InMemoryScenarioContextRepository : IScenarioContextRepository
 	{
-		private readonly Dictionary<long, ScenarioContext> _contexts = new();
+		private readonly ConcurrentDictionary<long, ScenarioContext> _contexts = new();
 
 		public Task<ScenarioContext?> GetContext(long userId, CancellationToken ct)
 		{
@@ -26,7 +28,7 @@ namespace TelegramBot.Scenarios
 
 		public Task ResetContext(long userId, CancellationToken ct)
 		{
-			_contexts.Remove(userId);
+			_contexts.TryRemove(userId, out _);
 			return Task.CompletedTask;
 		}
 	}

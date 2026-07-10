@@ -43,29 +43,35 @@ try
 
 	var usersPath = Path.Combine(dataRoot, "users");
 	var itemsPath = Path.Combine(dataRoot, "items");
+	var listsPath = Path.Combine(dataRoot, "lists");
 
 	Console.WriteLine($"Хранилище пользователей: {usersPath}");
 	Console.WriteLine($"Хранилище заказов:       {itemsPath}");
+	Console.WriteLine($"Хранилище списков:       {listsPath}");
 
 	IUserRepository userRepository = new FileUserRepository(usersPath);
 	IToDoRepository toDoRepository = new FileToDoRepository(itemsPath);
+	IToDoListRepository toDoListRepository = new FileToDoListRepository(listsPath);
 
 	// 4. Сервисы с DI через конструктор
 	IUserService userService = new UserService(userRepository);
 	IToDoService toDoService = new AutoPartsToDoService(toDoRepository,
 		maxTaskCount: 10, maxTaskLength: 100);
+	IToDoListService toDoListService = new ToDoListService(toDoListRepository);
 	IToDoReportService toDoReportService = new ToDoReportService(toDoRepository);
 
 	// 4a. Сценарии и хранилище их промежуточного состояния
 	IScenarioContextRepository scenarioContextRepository = new InMemoryScenarioContextRepository();
 	var scenarios = new IScenario[]
 	{
-		new AddTaskScenario(userService, toDoService)
+		new AddTaskScenario(userService, toDoService, toDoListService),
+		new AddListScenario(userService, toDoListService),
+		new DeleteListScenario(userService, toDoListService, toDoService)
 	};
 
 	// 5. Обработчик с возможностью инициировать отмену из /exit
-	var handler = new UpdateHandler(userService, toDoService, toDoReportService,
-		scenarios, scenarioContextRepository, cts);
+	var handler = new UpdateHandler(userService, toDoService, toDoListService,
+		toDoReportService, scenarios, scenarioContextRepository, cts);
 
 	// 6. HttpClient с прокси (если задан TELEGRAM_BOT_PROXY)
 	using var httpClient = ProxyFactory.CreateHttpClient(out var proxyDescription);
@@ -86,8 +92,7 @@ try
 		new BotCommand { Command = "info",         Description = "Информация о программе и аккаунте" },
 		new BotCommand { Command = "addtask",      Description = "Добавить заказ (пошаговый сценарий)" },
 		new BotCommand { Command = "cancel",       Description = "Отменить текущий сценарий" },
-		new BotCommand { Command = "showtasks",    Description = "Показать активные заказы" },
-		new BotCommand { Command = "showalltasks", Description = "Показать все заказы" },
+		new BotCommand { Command = "show",         Description = "Показать списки и задачи" },
 		new BotCommand { Command = "completetask", Description = "Выполнить заказ: /completetask <id>" },
 		new BotCommand { Command = "removetask",   Description = "Удалить заказ: /removetask <номер>" },
 		new BotCommand { Command = "report",       Description = "Статистика по заказам" },
@@ -98,7 +103,7 @@ try
 	// 9. Запуск приёма обновлений (long polling).
 	var receiverOptions = new ReceiverOptions
 	{
-		AllowedUpdates = new[] { UpdateType.Message },
+		AllowedUpdates = new[] { UpdateType.Message, UpdateType.CallbackQuery },
 		DropPendingUpdates = true
 	};
 
