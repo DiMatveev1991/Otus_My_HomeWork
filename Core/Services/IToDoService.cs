@@ -13,7 +13,13 @@ namespace Core.Services
 		/// <summary>Возвращает ToDoItem для UserId со статусом Active</summary>
 		Task<IReadOnlyList<ToDoItem>> GetActiveByUserIdAsync(Guid userId, CancellationToken ct);
 
-		Task<ToDoItem> AddAsync(ToDoUser user, string name, DateTime deadline, CancellationToken ct);
+		/// <summary>
+		/// Возвращает задачи пользователя, привязанные к списку listId.
+		/// Если listId == null — задачи без списка.
+		/// </summary>
+		Task<IReadOnlyList<ToDoItem>> GetByUserIdAndList(Guid userId, Guid? listId, CancellationToken ct);
+
+		Task<ToDoItem> AddAsync(ToDoUser user, string name, DateTime deadline, ToDoList? list, CancellationToken ct);
 		Task MarkCompletedAsync(Guid id, CancellationToken ct);
 		Task DeleteAsync(Guid id, CancellationToken ct);
 

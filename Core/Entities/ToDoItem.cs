@@ -13,6 +13,9 @@ namespace Core.Entities
 		public DateTime CreatedAt { get; }
 		public DateTime Deadline { get; }
 
+		// Список, к которому привязана задача. null — задача без списка.
+		public ToDoList? List { get; }
+
 		// [JsonInclude] — иначе System.Text.Json не запишет свойство с private set
 		[JsonInclude]
 		public ToDoItemState State { get; private set; }
@@ -21,13 +24,14 @@ namespace Core.Entities
 		public DateTime? StateChangedAt { get; private set; }
 
 		// Конструктор для создания новой задачи в рантайме
-		public ToDoItem(ToDoUser user, string name, DateTime deadline)
+		public ToDoItem(ToDoUser user, string name, DateTime deadline, ToDoList? list = null)
 		{
 			Id = Guid.NewGuid();
 			User = user;
 			Name = name;
 			CreatedAt = DateTime.UtcNow;
 			Deadline = deadline;
+			List = list;
 			State = ToDoItemState.Active;
 			StateChangedAt = null;
 		}
@@ -36,13 +40,14 @@ namespace Core.Entities
 		// Имена параметров должны совпадать с именами свойств (case-insensitive).
 		[JsonConstructor]
 		public ToDoItem(Guid id, ToDoUser user, string name, DateTime createdAt,
-			DateTime deadline, ToDoItemState state, DateTime? stateChangedAt)
+			DateTime deadline, ToDoList? list, ToDoItemState state, DateTime? stateChangedAt)
 		{
 			Id = id;
 			User = user;
 			Name = name;
 			CreatedAt = createdAt;
 			Deadline = deadline;
+			List = list;
 			State = state;
 			StateChangedAt = stateChangedAt;
 		}
