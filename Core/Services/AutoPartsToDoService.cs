@@ -29,6 +29,11 @@ namespace Core.Services
 			_maxTaskLength = maxTaskLength;
 		}
 
+		public Task<ToDoItem?> Get(Guid toDoItemId, CancellationToken ct)
+		{
+			return _toDoRepository.GetAsync(toDoItemId, ct);
+		}
+
 		public async Task<IReadOnlyList<ToDoItem>> GetAllByUserIdAsync(Guid userId, CancellationToken ct)
 		{
 			return await _toDoRepository.GetAllByUserIdAsync(userId, ct);

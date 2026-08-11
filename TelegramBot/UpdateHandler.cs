@@ -5,7 +5,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Entities;
+using Core.Enums;
 using Core.Services;
+using Helpers;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
@@ -22,6 +24,8 @@ namespace TelegramBot
 	/// </summary>
 	public class UpdateHandler : IUpdateHandler
 	{
+		private static int _pageSize = 5;
+
 		private readonly IUserService _userService;
 		private readonly IToDoService _toDoService;
 		private readonly IToDoListService _toDoListService;
@@ -149,12 +153,6 @@ namespace TelegramBot
 					var addTaskContext = new ScenarioContext(ScenarioType.AddTask);
 					await ProcessScenario(botClient, addTaskContext, update, ct);
 					break;
-				case "/completetask":
-					await HandleCompleteOrder(botClient, chat, currentUser, argument, ct);
-					break;
-				case "/removetask":
-					await HandleRemoveOrder(botClient, chat, currentUser, argument, ct);
-					break;
 				case "/report":
 					await HandleReport(botClient, chat, currentUser, ct);
 					break;
@@ -202,9 +200,36 @@ namespace TelegramBot
 			{
 				case "show":
 				{
-					var listCallback = ToDoListCallbackDto.FromString(query.Data);
-					await HandleShowList(botClient, query.Message.Chat, currentUser,
-						listCallback.ToDoListId, ct);
+					var listCallback = PagedListCallbackDto.FromString(query.Data);
+					await HandleShowList(botClient, query.Message, currentUser,
+						listCallback, showCompleted: false, ct);
+					break;
+				}
+				case "show_completed":
+				{
+					var listCallback = PagedListCallbackDto.FromString(query.Data);
+					await HandleShowList(botClient, query.Message, currentUser,
+						listCallback, showCompleted: true, ct);
+					break;
+				}
+				case "showtask":
+				{
+					var itemCallback = ToDoItemCallbackDto.FromString(query.Data);
+					await HandleShowTask(botClient, query.Message, currentUser,
+						itemCallback, ct);
+					break;
+				}
+				case "completetask":
+				{
+					var itemCallback = ToDoItemCallbackDto.FromString(query.Data);
+					await HandleCompleteTask(botClient, query.Message, currentUser,
+						itemCallback, ct);
+					break;
+				}
+				case "deletetask":
+				{
+					var context = new ScenarioContext(ScenarioType.DeleteTask);
+					await ProcessScenario(botClient, context, update, ct);
 					break;
 				}
 				case "addlist":
@@ -314,12 +339,9 @@ namespace TelegramBot
 			sb.AppendLine("/addtask                  - Добавить заказ (пошаговый сценарий:");
 			sb.AppendLine("                            название, дедлайн dd.MM.yyyy, выбор списка)");
 			sb.AppendLine("/cancel                   - Отменить текущий сценарий");
-			sb.AppendLine("/show                     - Показать списки и задачи. Выбор списка");
-			sb.AppendLine("                            кнопками; ниже — добавить/удалить список");
-			sb.AppendLine("/completetask <id>        - Отметить заказ выполненным по GUID.");
-			sb.AppendLine("                            Пример: /completetask 3fa85f64-5717-...");
-			sb.AppendLine("/removetask <номер>       - Удалить заказ по номеру.");
-			sb.AppendLine("                            Пример: /removetask 2");
+			sb.AppendLine("/show                     - Показать списки и задачи постранично.");
+			sb.AppendLine("                            Выполнение и удаление — кнопками задачи");
+			sb.AppendLine("                            с подтверждением перед удалением");
 			sb.AppendLine("/report                   - Статистика по вашим заказам");
 			sb.AppendLine("                            (всего / выполненных / активных)");
 			sb.AppendLine("/find <префикс>           - Поиск заказов по началу названия.");
@@ -379,100 +401,182 @@ namespace TelegramBot
 				cancellationToken: ct);
 		}
 
-		// Показ задач выбранного списка (или задач без списка при listId == null).
-		private async Task HandleShowList(ITelegramBotClient bot, Chat chat,
-			ToDoUser user, Guid? listId, CancellationToken ct)
+		// Показ задач выбранного списка (или задач без списка при ToDoListId == null).
+		private async Task HandleShowList(ITelegramBotClient bot, Message message,
+			ToDoUser user, PagedListCallbackDto listDto, bool showCompleted,
+			CancellationToken ct)
 		{
-			var orders = await _toDoService.GetByUserIdAndList(user.UserId, listId, ct);
-
 			var listName = "📌Без списка";
-			if (listId is { } id)
+			if (listDto.ToDoListId is { } listId)
 			{
-				var list = await _toDoListService.Get(id, ct);
-				listName = list?.Name ?? "Список";
+				var list = await _toDoListService.Get(listId, ct);
+				if (list is null || list.User.UserId != user.UserId)
+				{
+					await bot.EditMessageText(message.Chat.Id, message.Id,
+						"Список не найден", cancellationToken: ct);
+					return;
+				}
+
+				listName = list.Name;
 			}
 
-			if (orders.Count == 0)
+			var expectedState = showCompleted ? ToDoItemState.Completed : ToDoItemState.Active;
+			var tasks = (await _toDoService.GetByUserIdAndList(
+					user.UserId, listDto.ToDoListId, ct))
+				.Where(item => item.State == expectedState)
+				.OrderBy(item => item.Deadline)
+				.ThenBy(item => item.CreatedAt)
+				.ToList();
+
+			var callbackData = tasks
+				.Select(item => new KeyValuePair<string, string>(
+					item.Name,
+					new ToDoItemCallbackDto("showtask", item.Id).ToString()))
+				.ToList();
+
+			var keyboard = BuildPagedButtons(callbackData, listDto);
+
+			if (!showCompleted)
 			{
-				await SendAsync(bot, chat.Id, KeyboardFactory.PostRegistration,
-					$"Список \"{listName}\": задач нет.", ct);
-				return;
+				var rows = keyboard.InlineKeyboard.Select(row => row.ToArray()).ToList();
+				rows.Add(new[]
+				{
+					InlineKeyboardButton.WithCallbackData(
+						"☑️Посмотреть выполненные",
+						new PagedListCallbackDto("show_completed", listDto.ToDoListId, 0).ToString())
+				});
+				keyboard = new InlineKeyboardMarkup(rows);
 			}
 
-			var sb = new StringBuilder();
-			sb.AppendLine($"Список \"{listName}\":");
-			sb.AppendLine("======================================================================");
-			for (int i = 0; i < orders.Count; i++)
-			{
-				var o = orders[i];
-				var stateText = o.State == Core.Enums.ToDoItemState.Active ? "(Active)" : "(Completed)";
-				sb.AppendLine(
-					$"{i + 1}. {stateText} {o.Name} — {o.CreatedAt:dd.MM.yyyy HH:mm:ss} — `{o.Id}`");
-			}
-			sb.AppendLine("======================================================================");
-			sb.AppendLine($"Всего задач: {orders.Count}");
+			var totalPages = Math.Max(1, (int)Math.Ceiling(callbackData.Count / (double)_pageSize));
+			var text = callbackData.Count == 0
+				? "Задач нет"
+				: $"{(showCompleted ? "Выполненные" : "Активные")} задачи списка \"{listName}\"\n" +
+				  $"Страница {listDto.Page + 1} из {totalPages}";
 
-			await SendMarkdownAsync(bot, chat.Id, KeyboardFactory.PostRegistration, sb.ToString(), ct);
+			await bot.EditMessageText(message.Chat.Id, message.Id, text,
+				replyMarkup: keyboard, cancellationToken: ct);
 		}
 
-		private async Task HandleCompleteOrder(ITelegramBotClient bot, Chat chat,
-			ToDoUser user, string argument, CancellationToken ct)
+		private static InlineKeyboardMarkup BuildPagedButtons(
+			IReadOnlyList<KeyValuePair<string, string>> callbackData,
+			PagedListCallbackDto listDto)
 		{
-			if (!Guid.TryParse(argument, out var orderId))
+			var totalPages = (int)Math.Ceiling(callbackData.Count / (double)_pageSize);
+			var lastPage = Math.Max(0, totalPages - 1);
+			listDto.Page = Math.Clamp(listDto.Page, 0, lastPage);
+
+			var rows = callbackData
+				.GetBatchByNumber(_pageSize, listDto.Page)
+				.Select(item => new[]
+				{
+					InlineKeyboardButton.WithCallbackData(item.Key, item.Value)
+				})
+				.ToList();
+
+			var navigation = new List<InlineKeyboardButton>();
+			if (listDto.Page > 0)
 			{
-				await SendAsync(bot, chat.Id, KeyboardFactory.PostRegistration,
-					"Укажите корректный ID заказа в формате GUID.\n" +
-					"ID заказа можно найти в списке /show.\n" +
-					"Пример: /completetask 3fa85f64-5717-4562-b3fc-2c963f66afa6", ct);
-				return;
+				navigation.Add(InlineKeyboardButton.WithCallbackData(
+					"⬅️",
+					new PagedListCallbackDto(listDto.Action, listDto.ToDoListId,
+						listDto.Page - 1).ToString()));
 			}
 
-			var orders = await _toDoService.GetAllByUserIdAsync(user.UserId, ct);
-			var order = orders.FirstOrDefault(t => t.Id == orderId);
-
-			if (order == null)
+			if (listDto.Page < totalPages - 1)
 			{
-				await SendAsync(bot, chat.Id, KeyboardFactory.PostRegistration,
-					$"Заказ с ID {orderId} не найден в вашем списке.\n" +
-					"Проверьте ID командой /show", ct);
-				return;
+				navigation.Add(InlineKeyboardButton.WithCallbackData(
+					"➡️",
+					new PagedListCallbackDto(listDto.Action, listDto.ToDoListId,
+						listDto.Page + 1).ToString()));
 			}
 
-			await _toDoService.MarkCompletedAsync(orderId, ct);
-			await SendAsync(bot, chat.Id, KeyboardFactory.PostRegistration,
-				$"Заказ выполнен!\n" +
-				$"Запчасть: {order.Name}\n" +
-				$"Время выполнения: {DateTime.UtcNow:dd.MM.yyyy HH:mm:ss}", ct);
+			if (navigation.Count > 0)
+				rows.Add(navigation.ToArray());
+
+			return new InlineKeyboardMarkup(rows);
 		}
 
-		private async Task HandleRemoveOrder(ITelegramBotClient bot, Chat chat,
-			ToDoUser user, string argument, CancellationToken ct)
+		private async Task HandleShowTask(ITelegramBotClient bot, Message message,
+			ToDoUser user, ToDoItemCallbackDto itemDto, CancellationToken ct)
 		{
-			var allOrders = (await _toDoService.GetAllByUserIdAsync(user.UserId, ct)).ToList();
-
-			if (allOrders.Count == 0)
+			var item = await GetUserTask(itemDto.ToDoItemId, user, ct);
+			if (item is null)
 			{
-				await SendAsync(bot, chat.Id, KeyboardFactory.PostRegistration,
-					$"{user.TelegramUserName}, список заказов пуст. Нечего удалять.", ct);
+				await bot.EditMessageText(message.Chat.Id, message.Id,
+					"Задача не найдена", cancellationToken: ct);
 				return;
 			}
 
-			if (!int.TryParse(argument, out var number) ||
-				number < 1 || number > allOrders.Count)
+			var keyboard = new InlineKeyboardMarkup(new[]
 			{
-				await SendAsync(bot, chat.Id, KeyboardFactory.PostRegistration,
-					$"Укажите номер заказа от 1 до {allOrders.Count}.\n" +
-					"Пример: /removetask 2\n" +
-					"Список заказов: /show", ct);
+				new[]
+				{
+					InlineKeyboardButton.WithCallbackData("✅Выполнить",
+						new ToDoItemCallbackDto("completetask", item.Id).ToString()),
+					InlineKeyboardButton.WithCallbackData("❌Удалить",
+						new ToDoItemCallbackDto("deletetask", item.Id).ToString())
+				}
+			});
+
+			await bot.EditMessageText(message.Chat.Id, message.Id,
+				BuildTaskInfo(item), replyMarkup: keyboard, cancellationToken: ct);
+		}
+
+		private async Task HandleCompleteTask(ITelegramBotClient bot, Message message,
+			ToDoUser user, ToDoItemCallbackDto itemDto, CancellationToken ct)
+		{
+			var item = await GetUserTask(itemDto.ToDoItemId, user, ct);
+			if (item is null)
+			{
+				await bot.EditMessageText(message.Chat.Id, message.Id,
+					"Задача не найдена", cancellationToken: ct);
 				return;
 			}
 
-			var order = allOrders[number - 1];
-			await _toDoService.DeleteAsync(order.Id, ct);
-			await SendAsync(bot, chat.Id, KeyboardFactory.PostRegistration,
-				$"Заказ удалён!\n" +
-				$"Запчасть: {order.Name}\n" +
-				$"Осталось заказов: {allOrders.Count - 1}", ct);
+			var resultText = "Задача уже выполнена";
+			if (item.State != ToDoItemState.Completed)
+			{
+				await _toDoService.MarkCompletedAsync(item.Id, ct);
+				resultText = "Задача выполнена";
+			}
+
+			var deleteKeyboard = new InlineKeyboardMarkup(new[]
+			{
+				new[]
+				{
+					InlineKeyboardButton.WithCallbackData("❌Удалить",
+						new ToDoItemCallbackDto("deletetask", item.Id).ToString())
+				}
+			});
+
+			await bot.EditMessageText(message.Chat.Id, message.Id,
+				$"{resultText}: {item.Name}", replyMarkup: deleteKeyboard,
+				cancellationToken: ct);
+		}
+
+		private async Task<ToDoItem?> GetUserTask(Guid taskId, ToDoUser user,
+			CancellationToken ct)
+		{
+			if (taskId == Guid.Empty)
+				return null;
+
+			var item = await _toDoService.Get(taskId, ct);
+			return item?.User.UserId == user.UserId ? item : null;
+		}
+
+		private static string BuildTaskInfo(ToDoItem item)
+		{
+			var state = item.State == ToDoItemState.Active ? "Активна" : "Выполнена";
+			var completedAt = item.StateChangedAt is { } stateChangedAt
+				? $"\nВыполнена: {stateChangedAt:dd.MM.yyyy HH:mm:ss}"
+				: string.Empty;
+
+			return $"Задача: {item.Name}\n" +
+				   $"Статус: {state}\n" +
+				   $"Список: {item.List?.Name ?? "Без списка"}\n" +
+				   $"Создана: {item.CreatedAt:dd.MM.yyyy HH:mm:ss}\n" +
+				   $"Дедлайн: {item.Deadline:dd.MM.yyyy}{completedAt}";
 		}
 
 		private async Task HandleReport(ITelegramBotClient bot, Chat chat,

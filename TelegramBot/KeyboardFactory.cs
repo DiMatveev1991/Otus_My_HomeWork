@@ -61,19 +61,19 @@ namespace TelegramBot
 
 			if (includeNoList)
 			{
-				var noList = new ToDoListCallbackDto { Action = action, ToDoListId = null };
 				rows.Add(new[]
 				{
-					InlineKeyboardButton.WithCallbackData("📌Без списка", noList.ToString())
+					InlineKeyboardButton.WithCallbackData("📌Без списка",
+						BuildListCallbackData(action, null))
 				});
 			}
 
 			foreach (var list in lists)
 			{
-				var dto = new ToDoListCallbackDto { Action = action, ToDoListId = list.Id };
 				rows.Add(new[]
 				{
-					InlineKeyboardButton.WithCallbackData(list.Name, dto.ToString())
+					InlineKeyboardButton.WithCallbackData(list.Name,
+						BuildListCallbackData(action, list.Id))
 				});
 			}
 
@@ -87,6 +87,13 @@ namespace TelegramBot
 			}
 
 			return new InlineKeyboardMarkup(rows);
+		}
+
+		private static string BuildListCallbackData(string action, System.Guid? listId)
+		{
+			return action == "show"
+				? new PagedListCallbackDto(action, listId, 0).ToString()
+				: new ToDoListCallbackDto { Action = action, ToDoListId = listId }.ToString();
 		}
 	}
 }

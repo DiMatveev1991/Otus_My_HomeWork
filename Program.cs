@@ -66,7 +66,8 @@ try
 	{
 		new AddTaskScenario(userService, toDoService, toDoListService),
 		new AddListScenario(userService, toDoListService),
-		new DeleteListScenario(userService, toDoListService, toDoService)
+		new DeleteListScenario(userService, toDoListService, toDoService),
+		new DeleteTaskScenario(toDoService)
 	};
 
 	// 5. Обработчик с возможностью инициировать отмену из /exit
@@ -93,8 +94,6 @@ try
 		new BotCommand { Command = "addtask",      Description = "Добавить заказ (пошаговый сценарий)" },
 		new BotCommand { Command = "cancel",       Description = "Отменить текущий сценарий" },
 		new BotCommand { Command = "show",         Description = "Показать списки и задачи" },
-		new BotCommand { Command = "completetask", Description = "Выполнить заказ: /completetask <id>" },
-		new BotCommand { Command = "removetask",   Description = "Удалить заказ: /removetask <номер>" },
 		new BotCommand { Command = "report",       Description = "Статистика по заказам" },
 		new BotCommand { Command = "find",         Description = "Найти заказы: /find <префикс>" },
 		new BotCommand { Command = "exit",         Description = "Остановить бота" }
