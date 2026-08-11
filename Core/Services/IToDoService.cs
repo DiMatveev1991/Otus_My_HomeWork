@@ -8,6 +8,8 @@ namespace Core.Services
 {
 	public interface IToDoService
 	{
+		Task<ToDoItem?> Get(Guid toDoItemId, CancellationToken ct);
+
 		Task<IReadOnlyList<ToDoItem>> GetAllByUserIdAsync(Guid userId, CancellationToken ct);
 
 		/// <summary>Возвращает ToDoItem для UserId со статусом Active</summary>
