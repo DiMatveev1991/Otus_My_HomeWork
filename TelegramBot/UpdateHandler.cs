@@ -32,7 +32,7 @@ namespace TelegramBot
 		private readonly IToDoReportService _toDoReportService;
 		private readonly IEnumerable<IScenario> _scenarios;
 		private readonly IScenarioContextRepository _contextRepository;
-		private readonly CancellationTokenSource _appCts;
+		private readonly CancellationTokenSource _shutdownCts;
 
 		public UpdateHandler(
 			IUserService userService,
@@ -41,7 +41,7 @@ namespace TelegramBot
 			IToDoReportService toDoReportService,
 			IEnumerable<IScenario> scenarios,
 			IScenarioContextRepository contextRepository,
-			CancellationTokenSource appCts)
+			CancellationTokenSource shutdownCts)
 		{
 			_userService = userService;
 			_toDoService = toDoService;
@@ -49,7 +49,7 @@ namespace TelegramBot
 			_toDoReportService = toDoReportService;
 			_scenarios = scenarios;
 			_contextRepository = contextRepository;
-			_appCts = appCts;
+			_shutdownCts = shutdownCts;
 		}
 
 		// === IUpdateHandler ===================================================
@@ -633,7 +633,7 @@ namespace TelegramBot
 				$"Ваши заказы сохранены. Всего: {all.Count} (активных: {active.Count})\n" +
 				"Бот будет остановлен.", ct);
 
-			_appCts.Cancel();
+			_shutdownCts.Cancel();
 		}
 	}
 }

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using BackgroundTasks;
 using Core.DataAccess;
 using Core.Services;
 using Infrastructure.DataAccess;
@@ -33,14 +34,15 @@ try
 		return;
 	}
 
-	// 2. Источник отмены для всего приложения.
-	//    Срабатывает при: нажатии клавиши A, Ctrl+C, команде /exit.
-	using var cts = new CancellationTokenSource();
+	// 2. Отдельно храним сигнал завершения и токен выполняющихся операций.
+	//    Это позволяет сначала дождаться фоновых задач, а затем остановить бота.
+	using var shutdownCts = new CancellationTokenSource();
+	using var appCts = new CancellationTokenSource();
 
 	Console.CancelKeyPress += (_, e) =>
 	{
-		cts.Cancel();
 		e.Cancel = true;
+		shutdownCts.Cancel();
 	};
 
 	// 3. Каждый метод SQL-репозитория получает отдельный DataConnection из фабрики.
@@ -72,7 +74,7 @@ try
 
 	// 5. Обработчик с возможностью инициировать отмену из /exit
 	var handler = new UpdateHandler(userService, toDoService, toDoListService,
-		toDoReportService, scenarios, scenarioContextRepository, cts);
+		toDoReportService, scenarios, scenarioContextRepository, shutdownCts);
 
 	// 6. HttpClient с прокси (если задан TELEGRAM_BOT_PROXY)
 	using var httpClient = ProxyFactory.CreateHttpClient(out var proxyDescription);
@@ -97,7 +99,7 @@ try
 		new BotCommand { Command = "report",       Description = "Статистика по заказам" },
 		new BotCommand { Command = "find",         Description = "Найти заказы: /find <префикс>" },
 		new BotCommand { Command = "exit",         Description = "Остановить бота" }
-	}, cancellationToken: cts.Token);
+	}, cancellationToken: appCts.Token);
 
 	// 9. Запуск приёма обновлений (long polling).
 	var receiverOptions = new ReceiverOptions
@@ -106,45 +108,64 @@ try
 		DropPendingUpdates = true
 	};
 
-	botClient.StartReceiving(handler, receiverOptions, cts.Token);
+	// 9a. Регистрируем и запускаем фоновые задачи до запуска Telegram-бота.
+	using var backgroundTaskRunner = new BackgroundTaskRunner();
+	backgroundTaskRunner.AddTask(new ResetScenarioBackgroundTask(
+		TimeSpan.FromHours(1), scenarioContextRepository, botClient));
+	backgroundTaskRunner.StartTasks(appCts.Token);
 
-	var me = await botClient.GetMe(cts.Token);
-	Console.WriteLine($"{me.FirstName} (@{me.Username}) запущен!");
-	Console.WriteLine();
-	Console.WriteLine("Нажмите клавишу A для выхода");
-
-	// 10. Цикл ожидания клавиши.
-	while (!cts.IsCancellationRequested)
+	try
 	{
-		if (!Console.KeyAvailable)
-		{
-			try
-			{
-				await Task.Delay(100, cts.Token);
-			}
-			catch (OperationCanceledException) { break; }
-			continue;
-		}
+		botClient.StartReceiving(handler, receiverOptions, appCts.Token);
 
-		var key = Console.ReadKey(intercept: true);
-		if (key.Key == ConsoleKey.A)
-		{
-			Console.WriteLine("Выход по команде пользователя…");
-			cts.Cancel();
-			break;
-		}
-
-		// Любая другая клавиша — выводим информацию о боте
-		Console.WriteLine($"Bot: {me.FirstName} (@{me.Username})");
-		Console.WriteLine($"  Id:                       {me.Id}");
-		Console.WriteLine($"  Может присоединяться:     {me.CanJoinGroups}");
-		Console.WriteLine($"  Читает все сообщения:     {me.CanReadAllGroupMessages}");
-		Console.WriteLine($"  Поддерживает inline:      {me.SupportsInlineQueries}");
+		var me = await botClient.GetMe(appCts.Token);
+		Console.WriteLine($"{me.FirstName} (@{me.Username}) запущен!");
 		Console.WriteLine();
 		Console.WriteLine("Нажмите клавишу A для выхода");
+
+		// 10. Цикл ожидания сигнала завершения.
+		while (!shutdownCts.IsCancellationRequested)
+		{
+			if (!Console.KeyAvailable)
+			{
+				try
+				{
+					await Task.Delay(100, shutdownCts.Token);
+				}
+				catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
+				{
+					break;
+				}
+
+				continue;
+			}
+
+			var key = Console.ReadKey(intercept: true);
+			if (key.Key == ConsoleKey.A)
+			{
+				Console.WriteLine("Выход по команде пользователя…");
+				shutdownCts.Cancel();
+				break;
+			}
+
+			// Любая другая клавиша — выводим информацию о боте.
+			Console.WriteLine($"Bot: {me.FirstName} (@{me.Username})");
+			Console.WriteLine($"  Id:                       {me.Id}");
+			Console.WriteLine($"  Может присоединяться:     {me.CanJoinGroups}");
+			Console.WriteLine($"  Читает все сообщения:     {me.CanReadAllGroupMessages}");
+			Console.WriteLine($"  Поддерживает inline:      {me.SupportsInlineQueries}");
+			Console.WriteLine();
+			Console.WriteLine("Нажмите клавишу A для выхода");
+		}
+	}
+	finally
+	{
+		// 11. Сначала завершаем фоновые задачи, затем отменяем операции бота.
+		await backgroundTaskRunner.StopTasks(CancellationToken.None);
+		appCts.Cancel();
 	}
 
-	// 11. Даём отмене распространиться
+	// Даём отмене распространиться.
 	await Task.Delay(200);
 }
 catch (OperationCanceledException)
