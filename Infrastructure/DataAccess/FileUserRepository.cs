@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -33,6 +35,24 @@ namespace Infrastructure.DataAccess
 			// По заданию: папку создаём только если её ещё нет
 			if (!Directory.Exists(_basePath))
 				Directory.CreateDirectory(_basePath);
+		}
+
+		public async Task<IReadOnlyList<ToDoUser>> GetUsers(CancellationToken ct)
+		{
+			var users = new List<ToDoUser>();
+			foreach (var file in Directory.EnumerateFiles(_basePath, "*.json"))
+			{
+				ct.ThrowIfCancellationRequested();
+				await using var fs = File.OpenRead(file);
+				var user = await JsonSerializer.DeserializeAsync<ToDoUser>(fs, _jsonOptions, ct);
+				if (user is not null)
+					users.Add(user);
+			}
+
+			return users
+				.OrderBy(user => user.RegisteredAt)
+				.ThenBy(user => user.UserId)
+				.ToList();
 		}
 
 		public async Task<ToDoUser?> GetUserAsync(Guid userId, CancellationToken ct)

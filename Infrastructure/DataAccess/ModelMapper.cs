@@ -1,11 +1,29 @@
 using System;
 using Core.DataAccess.Models;
 using Core.Entities;
+using Infrastructure.DataAccess.Models;
 
 namespace Infrastructure.DataAccess
 {
 	internal static class ModelMapper
 	{
+		public static Notification MapFromModel(NotificationModel model)
+		{
+			ArgumentNullException.ThrowIfNull(model);
+
+			return new Notification
+			{
+				Id = model.Id,
+				User = MapFromModel(model.User
+					?? throw new InvalidOperationException("Пользователь нотификации не был загружен.")),
+				Type = model.Type,
+				Text = model.Text,
+				ScheduledAt = model.ScheduledAt,
+				IsNotified = model.IsNotified,
+				NotifiedAt = model.NotifiedAt
+			};
+		}
+
 		public static ToDoUser MapFromModel(ToDoUserModel model)
 		{
 			ArgumentNullException.ThrowIfNull(model);

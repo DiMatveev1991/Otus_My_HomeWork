@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using BackgroundTasks;
 using Core.DataAccess;
 using Core.Services;
+using Infrastructure;
 using Infrastructure.DataAccess;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -61,6 +62,7 @@ try
 		maxTaskCount: 10, maxTaskLength: 100);
 	IToDoListService toDoListService = new ToDoListService(toDoListRepository);
 	IToDoReportService toDoReportService = new ToDoReportService(toDoRepository);
+	INotificationService notificationService = new NotificationService(dataContextFactory);
 
 	// 4a. Сценарии и хранилище их промежуточного состояния
 	IScenarioContextRepository scenarioContextRepository = new InMemoryScenarioContextRepository();
@@ -112,6 +114,11 @@ try
 	using var backgroundTaskRunner = new BackgroundTaskRunner();
 	backgroundTaskRunner.AddTask(new ResetScenarioBackgroundTask(
 		TimeSpan.FromHours(1), scenarioContextRepository, botClient));
+	backgroundTaskRunner.AddTask(new NotificationBackgroundTask(notificationService, botClient));
+	backgroundTaskRunner.AddTask(new DeadlineBackgroundTask(
+		notificationService, userRepository, toDoRepository));
+	backgroundTaskRunner.AddTask(new TodayBackgroundTask(
+		notificationService, userRepository, toDoRepository));
 	backgroundTaskRunner.StartTasks(appCts.Token);
 
 	try

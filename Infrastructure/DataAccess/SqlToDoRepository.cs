@@ -98,6 +98,26 @@ namespace Infrastructure.DataAccess
 				ct);
 		}
 
+		public async Task<IReadOnlyList<ToDoItem>> GetActiveWithDeadline(
+			Guid userId,
+			DateTime from,
+			DateTime to,
+			CancellationToken ct)
+		{
+			using var dbContext = _factory.CreateDataContext();
+			var models = await WithAssociations(dbContext)
+				.Where(item =>
+					item.UserId == userId &&
+					item.State == ToDoItemState.Active &&
+					item.Deadline >= from &&
+					item.Deadline < to)
+				.OrderBy(item => item.Deadline)
+				.ThenBy(item => item.Id)
+				.ToListAsync(ct);
+
+			return models.Select(ModelMapper.MapFromModel).ToList();
+		}
+
 		public async Task<IReadOnlyList<ToDoItem>> FindAsync(
 			Guid userId, Func<ToDoItem, bool> predicate, CancellationToken ct)
 		{

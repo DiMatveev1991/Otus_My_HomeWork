@@ -24,6 +24,15 @@ namespace Core.DataAccess
 		/// <summary>Возвращает количество активных задач у пользователя</summary>
 		Task<int> CountActiveAsync(Guid userId, CancellationToken ct);
 
+		/// <summary>
+		/// Возвращает активные задачи пользователя с дедлайном в полуинтервале [from, to).
+		/// </summary>
+		Task<IReadOnlyList<ToDoItem>> GetActiveWithDeadline(
+			Guid userId,
+			DateTime from,
+			DateTime to,
+			CancellationToken ct);
+
 		/// <summary>Возвращает все задачи пользователя, удовлетворяющие предикату</summary>
 		Task<IReadOnlyList<ToDoItem>> FindAsync(Guid userId, Func<ToDoItem, bool> predicate, CancellationToken ct);
 	}
