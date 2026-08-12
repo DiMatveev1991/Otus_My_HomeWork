@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Core.DataAccess;
 using Core.Entities;
+using Core.Enums;
 using Core.Exceptions;
 
 namespace Core.Services
@@ -70,7 +71,19 @@ namespace Core.Services
 				if (await _toDoRepository.ExistsByNameAsync(user.UserId, name, ct))
 					throw new DuplicateTaskException(name);
 
-				var item = new ToDoItem(user, name, deadline, list);
+				var item = new ToDoItem
+				{
+					Id = Guid.NewGuid(),
+					User = user,
+					Name = name,
+					CreatedAt = DateTime.UtcNow,
+					Deadline = deadline.Kind == DateTimeKind.Utc
+						? deadline
+						: DateTime.SpecifyKind(deadline, DateTimeKind.Utc),
+					List = list,
+					State = ToDoItemState.Active,
+					StateChangedAt = null
+				};
 				await _toDoRepository.AddAsync(item, ct);
 				return item;
 			}
@@ -84,7 +97,8 @@ namespace Core.Services
 			{
 				var item = await _toDoRepository.GetAsync(id, ct)
 					?? throw new TaskNotFoundException(id);
-				item.MarkAsCompleted();
+				item.State = ToDoItemState.Completed;
+				item.StateChangedAt = DateTime.UtcNow;
 				await _toDoRepository.UpdateAsync(item, ct);
 			}
 			finally { _gate.Release(); }

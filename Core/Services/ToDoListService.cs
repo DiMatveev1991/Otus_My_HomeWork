@@ -46,7 +46,13 @@ namespace Core.Services
 				if (await _listRepository.ExistsByName(user.UserId, name, ct))
 					throw new ArgumentException($"Список с именем \"{name}\" уже существует.", nameof(name));
 
-				var list = new ToDoList(user, name);
+				var list = new ToDoList
+				{
+					Id = Guid.NewGuid(),
+					Name = name,
+					User = user,
+					CreatedAt = DateTime.UtcNow
+				};
 				await _listRepository.Add(list, ct);
 				return list;
 			}

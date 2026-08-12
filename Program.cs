@@ -1,5 +1,4 @@
 ﻿using System;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.DataAccess;
@@ -25,6 +24,15 @@ try
 		return;
 	}
 
+	var connectionString = Environment.GetEnvironmentVariable("TODO_DB_CONNECTION_STRING");
+	if (string.IsNullOrWhiteSpace(connectionString))
+	{
+		Console.WriteLine("Не задана переменная окружения TODO_DB_CONNECTION_STRING.");
+		Console.WriteLine("Пример для локальной базы ToDoList:");
+		Console.WriteLine("  Host=localhost;Port=5432;Database=ToDoList;Username=postgres;Password=<пароль>");
+		return;
+	}
+
 	// 2. Источник отмены для всего приложения.
 	//    Срабатывает при: нажатии клавиши A, Ctrl+C, команде /exit.
 	using var cts = new CancellationTokenSource();
@@ -35,23 +43,15 @@ try
 		e.Cancel = true;
 	};
 
-	// 3. Репозитории (Infrastructure) — теперь файловые.
-	//    Базовая папка: значение TODO_DATA_PATH или ./data рядом с .exe.
-	var dataRoot = Environment.GetEnvironmentVariable("TODO_DATA_PATH");
-	if (string.IsNullOrWhiteSpace(dataRoot))
-		dataRoot = Path.Combine(AppContext.BaseDirectory, "data");
+	// 3. Каждый метод SQL-репозитория получает отдельный DataConnection из фабрики.
+	IDataContextFactory<ToDoDataContext> dataContextFactory =
+		new DataContextFactory(connectionString);
 
-	var usersPath = Path.Combine(dataRoot, "users");
-	var itemsPath = Path.Combine(dataRoot, "items");
-	var listsPath = Path.Combine(dataRoot, "lists");
+	IUserRepository userRepository = new SqlUserRepository(dataContextFactory);
+	IToDoRepository toDoRepository = new SqlToDoRepository(dataContextFactory);
+	IToDoListRepository toDoListRepository = new SqlToDoListRepository(dataContextFactory);
 
-	Console.WriteLine($"Хранилище пользователей: {usersPath}");
-	Console.WriteLine($"Хранилище заказов:       {itemsPath}");
-	Console.WriteLine($"Хранилище списков:       {listsPath}");
-
-	IUserRepository userRepository = new FileUserRepository(usersPath);
-	IToDoRepository toDoRepository = new FileToDoRepository(itemsPath);
-	IToDoListRepository toDoListRepository = new FileToDoListRepository(listsPath);
+	Console.WriteLine("Хранилище данных: PostgreSQL, база ToDoList");
 
 	// 4. Сервисы с DI через конструктор
 	IUserService userService = new UserService(userRepository);

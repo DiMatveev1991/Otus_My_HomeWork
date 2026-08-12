@@ -1,5 +1,34 @@
 # AutoParts ToDo Bot
 
+## Подключение ORM
+
+Приложение использует `linq2db` для работы с PostgreSQL. Модели таблиц находятся
+в `Core/DataAccess/Models`, а SQL-репозитории, `ToDoDataContext`, фабрика контекстов
+и маппер — в `Infrastructure/DataAccess`.
+
+Перед запуском создайте базу и таблицы по инструкции ниже, затем задайте строку
+подключения без сохранения пароля в репозитории.
+
+PowerShell:
+
+```powershell
+$env:TODO_DB_CONNECTION_STRING = "Host=localhost;Port=5432;Database=ToDoList;Username=postgres;Password=YOUR_PASSWORD"
+$env:TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN"
+dotnet run
+```
+
+bash:
+
+```bash
+export TODO_DB_CONNECTION_STRING="Host=localhost;Port=5432;Database=ToDoList;Username=postgres;Password=YOUR_PASSWORD"
+export TELEGRAM_BOT_TOKEN="YOUR_BOT_TOKEN"
+dotnet run
+```
+
+Приложение больше не использует файловые репозитории: `SqlUserRepository`,
+`SqlToDoListRepository` и `SqlToDoRepository` создают отдельный контекст данных
+на каждый вызов и выполняют запросы через `linq2db`.
+
 ## База данных PostgreSQL
 
 В этой домашней работе база и её структура создаются SQL-скриптами, после чего приложение или ORM подключается к уже существующей базе. Миграции и EF Core в этом задании не используются.
