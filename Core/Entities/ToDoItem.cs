@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Text.Json.Serialization;
 using Core.Enums;
 
 namespace Core.Entities
@@ -7,56 +6,16 @@ namespace Core.Entities
 	// Класс задачи (заказа на автозапчасть)
 	public class ToDoItem
 	{
-		public Guid Id { get; }
-		public ToDoUser User { get; }
-		public string Name { get; }
-		public DateTime CreatedAt { get; }
-		public DateTime Deadline { get; }
+		public Guid Id { get; set; }
+		public ToDoUser User { get; set; } = null!;
+		public string Name { get; set; } = string.Empty;
+		public DateTime CreatedAt { get; set; }
+		public DateTime Deadline { get; set; }
 
 		// Список, к которому привязана задача. null — задача без списка.
-		public ToDoList? List { get; }
-
-		// [JsonInclude] — иначе System.Text.Json не запишет свойство с private set
-		[JsonInclude]
-		public ToDoItemState State { get; private set; }
-
-		[JsonInclude]
-		public DateTime? StateChangedAt { get; private set; }
-
-		// Конструктор для создания новой задачи в рантайме
-		public ToDoItem(ToDoUser user, string name, DateTime deadline, ToDoList? list = null)
-		{
-			Id = Guid.NewGuid();
-			User = user;
-			Name = name;
-			CreatedAt = DateTime.UtcNow;
-			Deadline = deadline;
-			List = list;
-			State = ToDoItemState.Active;
-			StateChangedAt = null;
-		}
-
-		// Конструктор для JsonSerializer — восстанавливает объект из JSON.
-		// Имена параметров должны совпадать с именами свойств (case-insensitive).
-		[JsonConstructor]
-		public ToDoItem(Guid id, ToDoUser user, string name, DateTime createdAt,
-			DateTime deadline, ToDoList? list, ToDoItemState state, DateTime? stateChangedAt)
-		{
-			Id = id;
-			User = user;
-			Name = name;
-			CreatedAt = createdAt;
-			Deadline = deadline;
-			List = list;
-			State = state;
-			StateChangedAt = stateChangedAt;
-		}
-
-		public void MarkAsCompleted()
-		{
-			State = ToDoItemState.Completed;
-			StateChangedAt = DateTime.UtcNow;
-		}
+		public ToDoList? List { get; set; }
+		public ToDoItemState State { get; set; }
+		public DateTime? StateChangedAt { get; set; }
 
 		public override string ToString()
 		{
