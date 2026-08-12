@@ -8,6 +8,7 @@ using Core.DataAccess.Models;
 using Core.Entities;
 using Core.Enums;
 using LinqToDB;
+using LinqToDB.Async;
 
 namespace Infrastructure.DataAccess
 {

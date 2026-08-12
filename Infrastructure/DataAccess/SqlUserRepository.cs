@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Core.DataAccess;
 using Core.Entities;
 using LinqToDB;
+using LinqToDB.Async;
 
 namespace Infrastructure.DataAccess
 {
