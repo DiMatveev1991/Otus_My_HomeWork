@@ -42,6 +42,22 @@ CREATE TABLE "ToDoItem"
 	CONSTRAINT "CK_ToDoItem_State" CHECK ("State" IN (0, 1))
 );
 
+CREATE TABLE "Notification"
+(
+	"Id"          UUID        NOT NULL,
+	"UserId"      UUID        NOT NULL,
+	"Type"        TEXT        NOT NULL,
+	"Text"        TEXT        NOT NULL,
+	"ScheduledAt" TIMESTAMPTZ NOT NULL,
+	"IsNotified"  BOOLEAN     NOT NULL DEFAULT FALSE,
+	"NotifiedAt"  TIMESTAMPTZ NULL,
+	CONSTRAINT "PK_Notification" PRIMARY KEY ("Id"),
+	CONSTRAINT "FK_Notification_ToDoUser_UserId"
+		FOREIGN KEY ("UserId") REFERENCES "ToDoUser" ("UserId"),
+	CONSTRAINT "CK_Notification_NotifiedAt"
+		CHECK (NOT "IsNotified" OR "NotifiedAt" IS NOT NULL)
+);
+
 CREATE INDEX "IX_ToDoList_UserId"
 	ON "ToDoList" ("UserId");
 
@@ -50,6 +66,12 @@ CREATE INDEX "IX_ToDoItem_UserId"
 
 CREATE INDEX "IX_ToDoItem_ListId"
 	ON "ToDoItem" ("ListId");
+
+CREATE INDEX "IX_Notification_UserId"
+	ON "Notification" ("UserId");
+
+CREATE UNIQUE INDEX "UX_Notification_UserId_Type"
+	ON "Notification" ("UserId", "Type");
 
 CREATE UNIQUE INDEX "UX_ToDoUser_TelegramUserId"
 	ON "ToDoUser" ("TelegramUserId");

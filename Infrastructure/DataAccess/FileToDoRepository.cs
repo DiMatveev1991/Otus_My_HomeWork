@@ -159,6 +159,20 @@ namespace Infrastructure.DataAccess
 			return active.Count;
 		}
 
+		public async Task<IReadOnlyList<ToDoItem>> GetActiveWithDeadline(
+			Guid userId,
+			DateTime from,
+			DateTime to,
+			CancellationToken ct)
+		{
+			var active = await GetActiveByUserIdAsync(userId, ct);
+			return active
+				.Where(item => item.Deadline >= from && item.Deadline < to)
+				.OrderBy(item => item.Deadline)
+				.ThenBy(item => item.Id)
+				.ToList();
+		}
+
 		public async Task<IReadOnlyList<ToDoItem>> FindAsync(
 			Guid userId, Func<ToDoItem, bool> predicate, CancellationToken ct)
 		{

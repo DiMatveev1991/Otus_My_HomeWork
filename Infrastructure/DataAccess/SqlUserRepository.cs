@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.DataAccess;
@@ -15,6 +17,17 @@ namespace Infrastructure.DataAccess
 		public SqlUserRepository(IDataContextFactory<ToDoDataContext> factory)
 		{
 			_factory = factory ?? throw new ArgumentNullException(nameof(factory));
+		}
+
+		public async Task<IReadOnlyList<ToDoUser>> GetUsers(CancellationToken ct)
+		{
+			using var dbContext = _factory.CreateDataContext();
+			var models = await dbContext.ToDoUsers
+				.OrderBy(user => user.RegisteredAt)
+				.ThenBy(user => user.UserId)
+				.ToListAsync(ct);
+
+			return models.Select(ModelMapper.MapFromModel).ToList();
 		}
 
 		public async Task<ToDoUser?> GetUserAsync(Guid userId, CancellationToken ct)
